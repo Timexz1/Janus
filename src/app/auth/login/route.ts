@@ -5,6 +5,9 @@ import { createServerClient } from "@supabase/ssr";
 // client-controlled Origin/Host headers (open-redirect / host-header injection).
 // NEXT_PUBLIC_SITE_URL wins in production; req.nextUrl.origin is the safe fallback.
 function siteOrigin(req: NextRequest) {
+  const host = req.nextUrl.hostname;
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
+  if (isLocal) return req.nextUrl.origin;
   return process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin;
 }
 
