@@ -215,8 +215,12 @@ const timers: Partial<Record<CloudTable, ReturnType<typeof setTimeout>>> = {};
 function scheduleMirror(sb: SupabaseClient, uid: string, table: CloudTable) {
   if (timers[table]) clearTimeout(timers[table]);
   timers[table] = setTimeout(() => {
+    // Background sync is best-effort — log as a warning (not console.error, which
+    // pops the Next.js dev error overlay) so a transient/pre-migration failure
+    // never interrupts the user. Real data integrity is protected by RLS + the
+    // hydrate-on-login reconciliation.
     mirrorNow(sb, uid, table).catch((e) =>
-      console.error("cloud sync failed:", table, e),
+      console.warn("cloud sync failed:", table, e),
     );
   }, 200);
 }

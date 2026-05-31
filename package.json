@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:link": "supabase link --project-ref nedplvjmiyjkkusbemof",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push",
+    "db:status": "supabase migration list"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
