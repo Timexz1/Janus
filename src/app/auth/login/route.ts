@@ -1,15 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-function requestOrigin(req: NextRequest) {
-  return (
-    req.headers.get("origin") ??
-    `${req.nextUrl.protocol}//${req.headers.get("host") ?? req.nextUrl.host}`
-  );
+// Build redirect targets from a server-trusted origin only — never from the
+// client-controlled Origin/Host headers (open-redirect / host-header injection).
+// NEXT_PUBLIC_SITE_URL wins in production; req.nextUrl.origin is the safe fallback.
+function siteOrigin(req: NextRequest) {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin;
 }
 
 function redirectToLogin(req: NextRequest, message: string) {
-  const to = new URL("/login", requestOrigin(req));
+  const to = new URL("/login", siteOrigin(req));
   to.searchParams.set("error", message);
   return NextResponse.redirect(to, { status: 303 });
 }
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     return redirectToLogin(req, "กรุณากรอกอีเมลและรหัสผ่าน");
   }
 
-  const res = NextResponse.redirect(new URL("/", requestOrigin(req)), { status: 303 });
+  const res = NextResponse.redirect(new URL("/", siteOrigin(req)), { status: 303 });
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll: () => req.cookies.getAll(),
