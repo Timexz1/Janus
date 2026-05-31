@@ -45,7 +45,7 @@ export default function HoldingsPage() {
         <p className="mt-1 text-sm text-slate-500">สถานะคงเหลือต่อบัญชี/หุ้น พร้อมต้นทุนเฉลี่ย (FIFO) และราคาตลาดจริง</p>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="ต้นทุนรวมที่ถือ" value={fmtUsd(portfolio.totalOpenCost)} />
         <StatCard label="มูลค่าตลาด" value={totals.hasPrices ? fmtUsd(totals.marketValue) : "—"} />
         <StatCard label="กำไรที่ยังไม่เกิด" value={totals.hasPrices ? fmtSignedUsd(totals.unrealized) : "—"} tone={totals.hasPrices ? gainTone(totals.unrealized) : "default"} />

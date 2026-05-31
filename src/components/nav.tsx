@@ -38,7 +38,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur">
       <div className="mx-auto flex max-w-[1900px] items-center gap-2 px-3 py-2.5 sm:px-5 lg:px-8 2xl:px-10 min-[2400px]:max-w-[calc(100vw-320px)] min-[3400px]:max-w-[3120px]">
-        <Link href="/" className="mr-2 flex items-center gap-2">
+        <Link href="/" className="mr-2 flex shrink-0 items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
             J
           </span>
@@ -46,7 +46,7 @@ export function Nav() {
         </Link>
 
         {showProtectedNav ? (
-          <nav className="flex items-center gap-1">
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
             {LINKS.map(({ href, key, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
@@ -67,7 +67,7 @@ export function Nav() {
           </nav>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {configured && user ? (
             <>
               <span className="hidden max-w-[140px] truncate text-xs text-slate-500 md:inline" title={user.email ?? ""}>

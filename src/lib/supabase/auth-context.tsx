@@ -26,6 +26,27 @@ const Ctx = createContext<AuthCtx>({
   signOut: async () => {},
 });
 
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
+async function readAuthUser(sb: ReturnType<typeof createClient>): Promise<User | null> {
+  const verified = await withTimeout(
+    sb.auth.getUser().then(({ data }) => data.user ?? null),
+    5000,
+  );
+  if (verified) return verified;
+
+  const sessionUser = await withTimeout(
+    sb.auth.getSession().then(({ data }) => data.session?.user ?? null),
+    2000,
+  );
+  return sessionUser ?? null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const configured = isSupabaseConfigured();
   const [user, setUser] = useState<User | null>(null);
@@ -64,9 +85,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    sb.auth
-      .getUser()
-      .then(({ data }) => applyUser(data.user ?? null))
+    readAuthUser(sb)
+      .then((currentUser) => applyUser(currentUser))
       .catch(() => applyUser(null));
 
     const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
@@ -90,11 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       queueMicrotask(() => {
         if (!cancelled) setLoading(true);
       });
-      sb.auth
-        .getUser()
-        .then(({ data }) => {
+      readAuthUser(sb)
+        .then((currentUser) => {
           if (cancelled) return;
-          const currentUser = data.user ?? null;
           if (currentUser) {
             setUser(currentUser);
             setLoading(false);

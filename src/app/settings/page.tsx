@@ -171,9 +171,11 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-slate-500">{t("settings.subtitle")}</p>
       </header>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)] min-[2200px]:grid-cols-[minmax(0,1fr)_minmax(520px,0.62fr)]">
+        <div className="space-y-4">
       <Card className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-200">ภาษี</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field label="วิธีจับคู่กำไร" htmlFor="s-method">
             <Select
               id="s-method"
@@ -226,7 +228,9 @@ export default function SettingsPage() {
         />
         <ThemeLanguageControls />
       </Card>
+        </div>
 
+        <div className="space-y-4">
       <Card className="space-y-3">
         <h2 className="text-sm font-semibold text-slate-200">OCR Provider (อ่าน screenshot)</h2>
         <p className="text-xs text-slate-500">
@@ -387,6 +391,8 @@ export default function SettingsPage() {
           <Check className="h-4 w-4" aria-hidden /> ล้างรายการเทรด
         </Button>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }
