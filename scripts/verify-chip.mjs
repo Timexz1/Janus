@@ -1,0 +1,11 @@
+﻿import { chromium } from "playwright";
+const b = await chromium.launch();
+const p = await b.newContext().then(c=>c.newPage());
+const errs=[]; p.on("pageerror",e=>errs.push(e.message));
+await p.goto("http://localhost:3000/transactions/new",{waitUntil:"domcontentloaded"});
+await p.getByText("OCR ใช้:").waitFor({timeout:15000});
+const chip = await p.getByText("OCR ใช้:").locator("..").textContent();
+console.log("[chip]", chip.replace(/\s+/g," ").trim());
+await p.screenshot({path:"./.verify/26-ocr-model-chip.png", fullPage:true});
+console.log("[errors]", errs.length?errs:"none");
+await b.close();

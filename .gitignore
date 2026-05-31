@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+# local e2e verification screenshots (not source)
+/.verify/
 
 # next.js
 /.next/
