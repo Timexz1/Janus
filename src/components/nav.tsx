@@ -46,21 +46,21 @@ export function Nav() {
         </Link>
 
         {showProtectedNav ? (
-          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-gutter:stable]">
             {LINKS.map(({ href, key, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+                 className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors ${
                   active
                     ? "bg-slate-800 text-slate-100"
                     : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                 }`}
               >
-                <Icon className="h-4 w-4" aria-hidden />
-                <span className="hidden sm:inline">{t(key)}</span>
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="hidden whitespace-nowrap sm:inline">{t(key)}</span>
               </Link>
             );
             })}
@@ -78,19 +78,19 @@ export function Nav() {
                 onClick={() => signOut()}
                 aria-label="ออกจากระบบ"
                 title="ออกจากระบบ"
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
               >
-                <LogOut className="h-4 w-4" aria-hidden />
-                <span className="hidden sm:inline">ออก</span>
+                <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="hidden whitespace-nowrap sm:inline">ออก</span>
               </button>
             </>
           ) : configured && !loading && pathname !== "/login" ? (
             <Link
               href="/login"
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
-              <LogIn className="h-4 w-4" aria-hidden />
-              <span className="hidden sm:inline">เข้าสู่ระบบ</span>
+              <LogIn className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="hidden whitespace-nowrap sm:inline">เข้าสู่ระบบ</span>
             </Link>
           ) : null}
           <LanguageToggle />
@@ -98,10 +98,10 @@ export function Nav() {
           {showProtectedNav ? (
             <Link
               href="/transactions/new"
-              className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
-              <Plus className="h-4 w-4" aria-hidden />
-              <span className="hidden sm:inline">{t("nav.add")}</span>
+              <Plus className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="hidden whitespace-nowrap sm:inline">{t("nav.add")}</span>
             </Link>
           ) : null}
         </div>

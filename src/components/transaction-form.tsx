@@ -50,6 +50,8 @@ const schema = z.object({
   stockValue: z.string().refine(isOptDecimal, "ตัวเลขไม่ถูกต้อง"),
   fees: z.string().refine(isNonNegDecimal, "ค่าธรรมเนียมต้อง ≥ 0"),
   couponsWaived: z.string().refine(isOptDecimal, "ตัวเลขไม่ถูกต้อง"),
+  fxRate: z.string().refine(isOptDecimal, "เรตต้องเป็นตัวเลข"),
+  thbCost: z.string().refine(isOptDecimal, "ยอดบาทต้องเป็นตัวเลข"),
   executedAtLocal: z.string().min(1, "ใส่วันและเวลา"),
 });
 
@@ -67,6 +69,8 @@ function toDefaults(tx?: StoredTransaction): FormValues {
       stockValue: "",
       fees: "0",
       couponsWaived: "",
+      fxRate: "",
+      thbCost: "",
       executedAtLocal: isoToLocalInput(new Date().toISOString()),
     };
   }
@@ -80,6 +84,8 @@ function toDefaults(tx?: StoredTransaction): FormValues {
     stockValue: tx.stockValue ?? "",
     fees: tx.fees,
     couponsWaived: tx.couponsWaived ?? "",
+    fxRate: tx.fxRate ?? "",
+    thbCost: tx.thbCost ?? "",
     executedAtLocal: isoToLocalInput(tx.executedAt),
   };
 }
@@ -159,6 +165,11 @@ export function TransactionForm({
       stockValue: v.stockValue.trim() === "" ? null : v.stockValue,
       fees: v.fees,
       couponsWaived: v.couponsWaived.trim() === "" ? null : v.couponsWaived,
+      // THB-funded buy (Dime!): the buy is also a money-out event. Keep only when
+      // the user actually paid in THB; never auto-fabricate an FX rate.
+      fxRate: v.side === "buy" && v.fxRate.trim() !== "" ? v.fxRate : null,
+      thbCost: v.side === "buy" && v.thbCost.trim() !== "" ? v.thbCost : null,
+      imagePath: editTx?.imagePath ?? null,
       executedAt: localInputToIso(v.executedAtLocal),
       executedTz: "Asia/Bangkok",
     };
@@ -234,6 +245,28 @@ export function TransactionForm({
         >
           <Input id="couponsWaived" inputMode="decimal" placeholder="0" {...register("couponsWaived")} />
         </Field>
+
+        {values.side === "buy" ? (
+          <>
+            <Field
+              label="เรตแลกเปลี่ยน (THB/USD) — ถ้าจ่ายด้วยบาท"
+              htmlFor="fxRate"
+              error={errors.fxRate?.message}
+              hint="เช่น Dime! Fast แปลงบาท→USD ตอนกดซื้อ"
+            >
+              <Input id="fxRate" inputMode="decimal" placeholder="33.80" {...register("fxRate")} />
+            </Field>
+
+            <Field
+              label="ยอดที่จ่ายเป็นบาท (โอนออกนอกประเทศ)"
+              htmlFor="thbCost"
+              error={errors.thbCost?.message}
+              hint="ยอดบาทรวมบนสลิป — นับเป็นเงินต้นออกนอกประเทศ"
+            >
+              <Input id="thbCost" inputMode="decimal" placeholder="2000.28" {...register("thbCost")} />
+            </Field>
+          </>
+        ) : null}
 
         <Field label="วันและเวลาที่จับคู่" htmlFor="executedAtLocal" error={errors.executedAtLocal?.message} hint="เวลาประเทศไทย">
           <Input id="executedAtLocal" type="datetime-local" {...register("executedAtLocal")} />

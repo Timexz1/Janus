@@ -14,6 +14,7 @@ import {
   getRemittances,
   getTaxSettings,
   getIncomeByYear,
+  repairOrphanTransactions,
   STORE_CHANGE_EVENT,
 } from "./local-store";
 
@@ -31,6 +32,9 @@ export function useStore() {
   const [hydrated, setHydrated] = useState(false);
 
   const refresh = useCallback(() => {
+    // self-heal any transaction whose account was mis-read by OCR before reading,
+    // so the list and the cloud mirror always see valid account references.
+    repairOrphanTransactions();
     setAccounts(getAccounts());
     setTransactions(getTransactions());
     setRemittances(getRemittances());

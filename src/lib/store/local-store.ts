@@ -6,6 +6,10 @@ import type {
   RemittanceInputData,
   TaxSettings,
   IncomeByYear,
+  ChartState,
+  ChartPeriod,
+  ChartTimeframe,
+  ChartDrawing,
 } from "./types";
 import {
   DEFAULT_APPORTIONMENT,
@@ -24,6 +28,7 @@ const TXNS_KEY = "janus.transactions.v1";
 const REMITTANCES_KEY = "janus.remittances.v1";
 const TAX_SETTINGS_KEY = "janus.taxSettings.v1";
 const INCOME_KEY = "janus.income.v1";
+const CHART_STATES_KEY = "janus.chartStates.v1";
 export const STORE_CHANGE_EVENT = "janus:store-change";
 
 export const DEFAULT_ACCOUNTS: Account[] = [
@@ -39,7 +44,8 @@ export type CloudTable =
   | "transactions"
   | "remittances"
   | "income_inputs"
-  | "tax_settings";
+  | "tax_settings"
+  | "chart_states";
 
 const KEY_TABLE: Record<string, CloudTable> = {
   [ACCOUNTS_KEY]: "accounts",
@@ -47,6 +53,7 @@ const KEY_TABLE: Record<string, CloudTable> = {
   [REMITTANCES_KEY]: "remittances",
   [INCOME_KEY]: "income_inputs",
   [TAX_SETTINGS_KEY]: "tax_settings",
+  [CHART_STATES_KEY]: "chart_states",
 };
 
 let cloudMirror: ((table: CloudTable) => void) | null = null;
@@ -92,6 +99,7 @@ export function loadSnapshot(s: {
   remittances?: Remittance[];
   income?: IncomeByYear;
   taxSettings?: Partial<TaxSettings>;
+  chartStates?: Record<string, ChartState>;
 }): void {
   if (typeof window === "undefined") return;
   runSuppressed(() => {
@@ -100,6 +108,7 @@ export function loadSnapshot(s: {
     if (s.remittances) write(REMITTANCES_KEY, s.remittances);
     if (s.income) write(INCOME_KEY, s.income);
     if (s.taxSettings) write(TAX_SETTINGS_KEY, { ...getTaxSettings(), ...s.taxSettings });
+    if (s.chartStates) write(CHART_STATES_KEY, s.chartStates);
   });
   window.dispatchEvent(new Event(STORE_CHANGE_EVENT));
 }
@@ -107,7 +116,7 @@ export function loadSnapshot(s: {
 /** Wipe the local cache (on logout, or before hydrating another user). */
 export function clearLocalData(): void {
   if (typeof window === "undefined") return;
-  [ACCOUNTS_KEY, TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY].forEach((k) =>
+  [ACCOUNTS_KEY, TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY, CHART_STATES_KEY].forEach((k) =>
     window.localStorage.removeItem(k),
   );
   window.dispatchEvent(new Event(STORE_CHANGE_EVENT));
@@ -169,6 +178,30 @@ export function deleteTransaction(id: string): void {
 
 export function replaceAllTransactions(txns: StoredTransaction[]): void {
   write(TXNS_KEY, txns);
+}
+
+/**
+ * Self-heal referential integrity: every transaction must reference an existing
+ * account. OCR once mis-read a broker account NUMBER (e.g. "CTH4675306") into
+ * accountId, which violated the cloud transactions→accounts foreign key and
+ * blocked ALL cloud sync for that user. Remap any such orphan to a valid account
+ * (prefer Webull's default). Returns true only if it changed something, so the
+ * caller's write/mirror doesn't fire needlessly. No-ops while accounts are empty
+ * (mid-hydration) so it never strands data.
+ */
+export function repairOrphanTransactions(): boolean {
+  const accounts = getAccounts();
+  if (accounts.length === 0) return false;
+  const validIds = new Set(accounts.map((a) => a.id));
+  const fallbackId = validIds.has("acc_webull") ? "acc_webull" : accounts[0].id;
+  let changed = false;
+  const fixed = getTransactions().map((t) => {
+    if (validIds.has(t.accountId)) return t;
+    changed = true;
+    return { ...t, accountId: fallbackId };
+  });
+  if (changed) write(TXNS_KEY, fixed);
+  return changed;
 }
 
 // --- Remittances -----------------------------------------------------------
@@ -236,4 +269,35 @@ export function getIncomeByYear(): IncomeByYear {
 
 export function setIncomeForYear(year: number, amountThb: string): void {
   write(INCOME_KEY, { ...getIncomeByYear(), [year]: amountThb });
+}
+
+// --- Chart state ----------------------------------------------------------
+
+export function getChartStates(): Record<string, ChartState> {
+  return read<Record<string, ChartState>>(CHART_STATES_KEY, {});
+}
+
+export function getChartState(ticker: string): ChartState | null {
+  const key = ticker.trim().toUpperCase();
+  return getChartStates()[key] ?? null;
+}
+
+export function saveChartState(
+  ticker: string,
+  input: {
+    period: ChartPeriod;
+    timeframe: ChartTimeframe;
+    drawings: ChartDrawing[];
+  },
+): void {
+  const key = ticker.trim().toUpperCase();
+  if (!key) return;
+  write(CHART_STATES_KEY, {
+    ...getChartStates(),
+    [key]: {
+      ticker: key,
+      ...input,
+      updatedAt: new Date().toISOString(),
+    },
+  });
 }

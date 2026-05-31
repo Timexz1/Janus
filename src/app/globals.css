@@ -3,6 +3,10 @@
 :root {
   --background: #070b16;
   --foreground: #e2e8f0;
+  --warning-bg: rgba(69, 26, 3, 0.18);
+  --warning-border: rgba(146, 64, 14, 0.55);
+  --warning-text: #fde68a;
+  --warning-strong: #fbbf24;
 }
 
 @theme inline {
@@ -20,6 +24,10 @@
 :root.light {
   --background: #eef2f7;
   --foreground: #0f172a;
+  --warning-bg: #fffbeb;
+  --warning-border: rgba(217, 119, 6, 0.42);
+  --warning-text: #78350f;
+  --warning-strong: #92400e;
 
   --color-slate-950: #ffffff;
   --color-slate-900: #ffffff;

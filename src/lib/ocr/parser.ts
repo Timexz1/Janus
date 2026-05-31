@@ -29,10 +29,14 @@ export interface ParsedTrade {
   ticker: string | null;
   exchange: "NYSE" | "NASDAQ" | "OTHER" | null;
   qty: string | null;
-  price: string | null;
-  stockValue: string | null;
-  fees: string | null; // summed (commission + VAT + TAF + market fee)
+  price: string | null; // USD per share
+  stockValue: string | null; // USD
+  fees: string | null; // USD — summed (commission + VAT + TAF + market fee)
   couponsWaived: string | null;
+  /** THB-funded buys (Dime!): exchange rate THB/USD shown on the slip. */
+  fxRate: string | null;
+  /** THB-funded buys: total THB paid on the slip (= principal sent abroad). */
+  thbCost: string | null;
   executedAt: string | null; // ISO
   executedTz: string | null;
   rawText: string;
@@ -123,6 +127,18 @@ function normalizeBroker(raw: unknown): Broker | null {
   if (/webull/i.test(text)) return "Webull";
   if (/dime/i.test(text)) return "Dime";
   return null;
+}
+
+/**
+ * Only our own stable account ids are valid foreign keys. OCR sometimes returns
+ * the broker's account NUMBER (e.g. "CTH4675306") in this field — never trust
+ * that as our account id (it would break the transactions→accounts FK). Accept
+ * only the known ids; otherwise derive the account from the broker.
+ */
+function normalizeAccountId(raw: unknown, broker: Broker | null): string | null {
+  const text = cleanStructuredText(raw)?.toLowerCase();
+  if (text === "acc_webull" || text === "acc_dime") return text;
+  return broker === "Webull" ? "acc_webull" : broker === "Dime" ? "acc_dime" : null;
 }
 
 function normalizeSide(raw: unknown): "buy" | "sell" | null {
@@ -217,7 +233,7 @@ function parsedFromStructured(text: string): ParsedTrade | null {
   const result: ParsedTrade = {
     broker,
     accountId:
-      cleanStructuredText(field(parsed, "accountId", "account_id")) ??
+      normalizeAccountId(field(parsed, "accountId", "account_id"), broker) ??
       fallback.accountId ??
       accountFromBroker,
     side: normalizeSide(field(parsed, "side")) ?? fallback.side,
@@ -232,6 +248,12 @@ function parsedFromStructured(text: string): ParsedTrade | null {
     couponsWaived:
       cleanStructuredNum(field(parsed, "couponsWaived", "coupons_waived", "coupon", "discount")) ??
       fallback.couponsWaived,
+    fxRate:
+      cleanStructuredNum(field(parsed, "fxRate", "fx_rate", "exchangeRate", "rate")) ??
+      fallback.fxRate,
+    thbCost:
+      cleanStructuredNum(field(parsed, "thbTotal", "thb_total", "thbCost", "thb_cost", "amountThb")) ??
+      fallback.thbCost,
     executedAt:
       normalizeIso(field(parsed, "executedAt", "executed_at", "dateTime", "datetime")) ??
       fallback.executedAt,
@@ -261,6 +283,22 @@ function parsedFromStructured(text: string): ParsedTrade | null {
     result.fees = fallback.fees ?? result.fees;
     result.executedAt = fallback.executedAt ?? result.executedAt;
     result.executedTz = fallback.executedTz ?? result.executedTz;
+  }
+
+  // Deterministic fee for THB-funded buys: fees(USD) = thbTotal/fx − qty×price.
+  // The slip's price is already USD, so this avoids trusting the model to divide
+  // the THB fee lines by the rate (a common source of cent-level errors).
+  if (result.fxRate && result.thbCost && result.qty && result.price) {
+    try {
+      const fx = new Decimal(result.fxRate);
+      if (fx.gt(0)) {
+        const usdTotal = new Decimal(result.thbCost).div(fx);
+        const feesUsd = usdTotal.minus(new Decimal(result.qty).mul(result.price));
+        if (feesUsd.gte(0) && feesUsd.lt(usdTotal)) result.fees = feesUsd.toString();
+      }
+    } catch {
+      /* keep the model's fee value */
+    }
   }
 
   if (copiedPriceAsQty(result)) result.qty = null;
@@ -342,6 +380,23 @@ function dimeQty(text: string, price: string | null, stockValue: string | null):
   if (matchingGross) return matchingGross;
   const notPrice = candidates.find((qty) => !sameNum(qty, price));
   return notPrice ?? candidates[0] ?? qtyBeforeSharesWord(text);
+}
+
+/**
+ * Dime shows the rate as "1 USD = 33.80 THB" — a plain numberAfter() would grab
+ * the leading "1". Prefer the number after "=", else the first plausible THB/USD
+ * rate (20–60) near the label.
+ */
+function dimeFxRate(text: string): string | null {
+  const eq = text.match(/อัตราแลกเปลี่ยน[\s\S]{0,40}?=\s*([\d,]+\.?\d*)/);
+  if (eq) return cleanNum(eq[1]);
+  const at = text.indexOf("อัตราแลกเปลี่ยน");
+  if (at === -1) return null;
+  for (const n of text.slice(at, at + 60).match(/[\d,]+\.?\d*/g) ?? []) {
+    const v = cleanNum(n);
+    if (v && Number(v) >= 20 && Number(v) <= 60) return v;
+  }
+  return null;
 }
 
 function detectBroker(text: string): Broker | null {
@@ -439,6 +494,8 @@ function parseWebull(text: string): ParsedTrade {
       numberAfter(text, "จำนวนเงินที่สมัคร") ?? numberAfter(text, "จำนวนเงิน"),
     fees: numberAfter(text, "ค่าธรรมเนียมการทำรายการ"),
     couponsWaived: null,
+    fxRate: null, // Webull = pre-exchanged USD; the buy is not a money-out event
+    thbCost: null,
     executedAt: date?.iso ?? null,
     executedTz: date?.tz ?? null,
     rawText: text,
@@ -448,8 +505,9 @@ function parseWebull(text: string): ParsedTrade {
 function parseDime(text: string): ParsedTrade {
   const side = detectSide(text, "Dime");
   const date = parseDimeDate(text);
-  const price = numberAfter(text, "ราคาที่ได้จริง");
-  const stockValue = numberAfter(text, "มูลค่าหุ้น");
+  const price = numberAfter(text, "ราคาที่ได้จริง"); // already USD/share on the slip
+  const rawStock = numberAfter(text, "มูลค่าหุ้น");
+  const fxRate = dimeFxRate(text);
   const commission = numberAfter(text, "ค่าคอมมิชชัน");
   const vat = numberAfter(text, "VAT") ?? numberAfter(text, "ภาษีมูลค่าเพิ่ม");
   const taf = numberAfter(text, "TAF") ?? numberAfter(text, "ค่าธรรมเนียมการขาย");
@@ -457,17 +515,48 @@ function parseDime(text: string): ParsedTrade {
     numberAfter(text, "รายการฟรีของเดือน") ??
     numberAfter(text, "คูปอง") ??
     numberAfter(text, "ส่วนลด");
+  const feesRaw = sumNums(commission, vat, taf);
+
+  // Dime! Fast (THB-funded): มูลค่าหุ้น and the fee lines are shown in THB while
+  // ราคาที่ได้จริง is already USD. Convert the THB amounts to USD with the slip's
+  // exchange rate, and record the THB grand total as principal sent abroad.
+  if (fxRate) {
+    const fx = new Decimal(fxRate);
+    const stockUsd = rawStock && fx.gt(0) ? new Decimal(rawStock).div(fx).toString() : null;
+    const feesUsd =
+      feesRaw && fx.gt(0) ? new Decimal(feesRaw).abs().div(fx).toString() : feesRaw;
+    return {
+      broker: "Dime",
+      accountId: "acc_dime",
+      side,
+      ticker: detectTicker(text, side),
+      exchange: detectExchange(text),
+      qty: dimeQty(text, price, stockUsd),
+      price,
+      stockValue: stockUsd,
+      fees: feesUsd,
+      couponsWaived: coupon,
+      fxRate,
+      thbCost: sumNums(rawStock, feesRaw), // ≈ THB headline total
+      executedAt: date?.iso ?? null,
+      executedTz: date?.tz ?? null,
+      rawText: text,
+    };
+  }
+
   return {
     broker: "Dime",
     accountId: "acc_dime",
     side,
     ticker: detectTicker(text, side),
     exchange: detectExchange(text),
-    qty: dimeQty(text, price, stockValue),
+    qty: dimeQty(text, price, rawStock),
     price,
-    stockValue,
-    fees: sumNums(commission, vat, taf),
+    stockValue: rawStock,
+    fees: feesRaw,
     couponsWaived: coupon,
+    fxRate: null,
+    thbCost: null,
     executedAt: date?.iso ?? null,
     executedTz: date?.tz ?? null,
     rawText: text,
@@ -492,6 +581,8 @@ export function parseOcrText(text: string): ParsedTrade {
     stockValue: null,
     fees: null,
     couponsWaived: null,
+    fxRate: null,
+    thbCost: null,
     executedAt: null,
     executedTz: null,
     rawText: text,

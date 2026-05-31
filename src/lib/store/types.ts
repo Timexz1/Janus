@@ -29,6 +29,19 @@ export interface StoredTransaction {
   stockValue: string | null;
   fees: string;
   couponsWaived: string | null;
+  /**
+   * THB-funded buys (e.g. Dime! Fast): the broker converts THB→USD at the moment
+   * of the trade, so the buy IS a money-out-of-Thailand event. fxRate = THB per
+   * USD shown on the slip; thbCost = total THB actually paid (= principal sent
+   * abroad). null for USD-funded trades (e.g. Webull, where USD was exchanged
+   * ahead of time and recorded as a separate outbound transfer). Gain is still
+   * computed in USD (per design); these only feed the outbound-principal
+   * cash-flow and the audit display.
+   */
+  fxRate: string | null; // THB per USD at the trade
+  thbCost: string | null; // total THB paid (principal exported)
+  /** Supabase Storage object path of the OCR screenshot, if imported from one. */
+  imagePath: string | null;
   executedAt: string; // ISO 8601 (UTC)
   executedTz: string | null; // original market tz, for audit
   createdAt: string;
@@ -70,3 +83,51 @@ export interface TaxSettings {
 
 /** Other (non-foreign) income per tax year (brief §5 income_inputs). */
 export type IncomeByYear = Record<number, string>; // taxYear → otherIncomeThb
+
+export type ChartPeriod = "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "ALL";
+export type ChartTimeframe = "D" | "W" | "M";
+export type ChartLineStyle = "solid" | "dashed" | "dotted";
+
+export interface ChartAnchorPoint {
+  time: string;
+  price: number;
+  logical?: number;
+}
+
+export type ChartDrawing =
+  | {
+      id: string;
+      type: "trendline";
+      from: ChartAnchorPoint;
+      to: ChartAnchorPoint;
+      width?: number;
+      color?: string;
+      style?: ChartLineStyle;
+    }
+  | {
+      id: string;
+      type: "horizontal";
+      price: number;
+      time?: string;
+      logical?: number;
+      width?: number;
+      color?: string;
+      style?: ChartLineStyle;
+    }
+  | {
+      id: string;
+      type: "vertical";
+      time: string;
+      logical?: number;
+      width?: number;
+      color?: string;
+      style?: ChartLineStyle;
+    };
+
+export interface ChartState {
+  ticker: string;
+  period: ChartPeriod;
+  timeframe: ChartTimeframe;
+  drawings: ChartDrawing[];
+  updatedAt: string;
+}

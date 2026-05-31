@@ -1,6 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+const LOCAL_HOST_RE = /^(localhost|127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|\[::1\])(?::\d+)?$/i;
+
+function siteOrigin(req: NextRequest) {
+  const host = req.headers.get("host");
+  if (host && LOCAL_HOST_RE.test(host)) {
+    const protocol = req.nextUrl.protocol.replace(/:$/, "") || "http";
+    return `${protocol}://${host}`;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin;
+}
+
+function redirectTo(req: NextRequest, pathname: string) {
+  return NextResponse.redirect(new URL(pathname, siteOrigin(req)));
+}
+
 /**
  * Refreshes the Supabase session cookie and protects routes when Supabase is
  * configured. With no Supabase env vars the app runs in local-only mode and
@@ -34,14 +49,10 @@ export async function proxy(req: NextRequest) {
   if (isAuthAction) return res;
 
   if (!user && !isAuthPage) {
-    const to = req.nextUrl.clone();
-    to.pathname = "/login";
-    return NextResponse.redirect(to);
+    return redirectTo(req, "/login");
   }
   if (user && isAuthPage) {
-    const to = req.nextUrl.clone();
-    to.pathname = "/";
-    return NextResponse.redirect(to);
+    return redirectTo(req, "/");
   }
   return res;
 }

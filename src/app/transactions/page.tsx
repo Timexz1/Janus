@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, Plus, Database } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
 import { buildPortfolio, normalizeStored } from "@/lib/portfolio/portfolio";
 import { deleteTransaction } from "@/lib/store/local-store";
+import { getScreenshotUrl } from "@/lib/store/screenshots";
 import { seedSampleData } from "@/lib/sample-data";
 import { Badge, Button, Card, EmptyState, Select } from "@/components/ui";
 import { TickerLink } from "@/components/ticker-link";
@@ -126,7 +127,10 @@ export default function TransactionsPage() {
                       <td className="px-4 py-3 text-slate-300">{fmtDateTimeBangkok(t.executedAt)}</td>
                       <td className="px-4 py-3 text-slate-400">{broker(t.accountId)}</td>
                       <td className="px-4 py-3 font-medium text-slate-100">
-                        <TickerLink ticker={t.ticker} />
+                        <div className="flex items-center gap-2">
+                          {t.imagePath ? <TxScreenshot path={t.imagePath} /> : null}
+                          <TickerLink ticker={t.ticker} />
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <Badge tone={t.side}>{t.side === "buy" ? "ซื้อ" : "ขาย"}</Badge>
@@ -173,5 +177,37 @@ export default function TransactionsPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Thumbnail of the OCR screenshot a transaction was imported from (private
+ *  bucket → short-lived signed URL fetched on mount). Opens full size on click. */
+function TxScreenshot({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getScreenshotUrl(path).then((u) => {
+      if (alive) setUrl(u);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-block shrink-0"
+      title="ดูภาพต้นฉบับ"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="screenshot"
+        className="h-7 w-7 rounded object-cover ring-1 ring-slate-700 hover:ring-2 hover:ring-indigo-400"
+      />
+    </a>
   );
 }

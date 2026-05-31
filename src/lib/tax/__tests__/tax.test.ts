@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Decimal, D } from "@/lib/money/decimal";
 import { calcProgressiveTax } from "@/lib/tax/brackets";
-import { matchRemittances, toTaxableInputs, type SaleEvent } from "@/lib/tax/remittance";
+import { matchRemittances, toTaxableInputs, outboundFromTrades, type SaleEvent } from "@/lib/tax/remittance";
 import { computeTax, whatIfRemittance } from "@/lib/tax/engine";
 
 const eq = (a: Decimal, expected: number, tol = 0.01) =>
@@ -154,5 +154,38 @@ describe("whatIfRemittance — marginal tax of remitting more", () => {
     );
     eq(r.extraTaxableThb, 35_000);
     eq(r.marginalTax, 3_500); // (475000 vs 440000) crosses 10% band
+  });
+});
+
+// ---------------------------------------------------------------------------
+// outboundFromTrades — THB-funded buys as money sent abroad
+// ---------------------------------------------------------------------------
+describe("outboundFromTrades", () => {
+  const t = (side: string, fxRate: string | null, thbCost: string | null) => ({ side, fxRate, thbCost });
+
+  it("sums THB-funded buys in THB and USD-equivalent", () => {
+    const out = outboundFromTrades([
+      t("buy", "33.80", "2000.28"), // ≈ 59.18 USD
+      t("buy", "35.00", "3500.00"), // = 100 USD
+    ]);
+    eq(out.thb, 5500.28);
+    eq(out.usd, 159.18, 0.02);
+  });
+
+  it("ignores USD trades, sells, and zero/blank THB", () => {
+    const out = outboundFromTrades([
+      t("buy", null, null), // Webull USD buy
+      t("sell", "33.80", "1000"), // a sell is not money-out
+      t("buy", "33.80", "0"), // zero
+      t("buy", "33.80", "338"), // = 10 USD
+    ]);
+    eq(out.thb, 338);
+    eq(out.usd, 10, 0.001);
+  });
+
+  it("counts THB even when fxRate is missing (USD-equiv skipped)", () => {
+    const out = outboundFromTrades([t("buy", null, "1000")]);
+    eq(out.thb, 1000);
+    eq(out.usd, 0);
   });
 });

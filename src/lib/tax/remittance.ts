@@ -66,6 +66,35 @@ export function toTaxableInputs(rs: StoredRemittanceLike[]): RemittanceInput[] {
     }));
 }
 
+/** A THB-funded buy contributes principal sent abroad, in both currencies. */
+export interface OutboundFromTrades {
+  usd: Decimal; // Σ thbCost / fxRate
+  thb: Decimal; // Σ thbCost
+}
+
+/**
+ * THB-funded buys (e.g. Dime! Fast) are money-out-of-Thailand events: the broker
+ * converts THB→USD at the moment of the buy, so the THB paid (thbCost) is
+ * principal sent abroad. Sum it in THB and in USD-equivalent (thbCost / fxRate)
+ * so the remittances view can fold these into "principal sent abroad" alongside
+ * the manually-logged outbound transfers. Only buys with a THB cost count.
+ */
+export function outboundFromTrades(
+  txns: { side: string; fxRate: string | null; thbCost: string | null }[],
+): OutboundFromTrades {
+  let usd = ZERO;
+  let thb = ZERO;
+  for (const t of txns) {
+    if (t.side !== "buy" || !t.thbCost) continue;
+    const thbAmt = D(t.thbCost);
+    if (!thbAmt.isFinite() || thbAmt.lte(0)) continue;
+    thb = thb.plus(thbAmt);
+    const fx = t.fxRate ? D(t.fxRate) : ZERO;
+    if (fx.gt(0)) usd = usd.plus(thbAmt.div(fx));
+  }
+  return { usd, thb };
+}
+
 export function matchRemittances(
   sales: SaleEvent[],
   remittances: RemittanceInput[],

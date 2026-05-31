@@ -24,9 +24,9 @@ export default function LoginPage() {
     return (
       <div className="mx-auto max-w-lg space-y-4 py-8">
         <h1 className="text-lg font-semibold text-slate-100">เข้าสู่ระบบ</h1>
-        <Card className="border-amber-900/40 bg-amber-950/10">
-          <p className="flex items-start gap-2 text-sm leading-relaxed text-amber-200/80">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <Card className="border-[color:var(--warning-border)] bg-[color:var(--warning-bg)]">
+          <p className="flex items-start gap-2 text-sm leading-relaxed text-[color:var(--warning-text)]">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning-strong)]" aria-hidden />
             <span>
               ตอนนี้แอปทำงานแบบ <b>เก็บข้อมูลในเบราว์เซอร์</b> (local) ยังไม่ได้เปิด
               Supabase — เมื่อตั้งค่า <code>NEXT_PUBLIC_SUPABASE_URL</code> และ{" "}

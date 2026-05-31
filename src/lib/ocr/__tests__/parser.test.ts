@@ -343,6 +343,97 @@ describe("parseOcrResponse — structured model output", () => {
     expect(p.executedAt).toMatch(/^2025-10-07/);
   });
 
+  it("never trusts a broker account NUMBER as accountId (FK-safety)", () => {
+    // The model sometimes returns the Webull account number ("CTH4675306") in the
+    // accountId field; that would break the transactions→accounts foreign key.
+    const p = parseOcrResponse(JSON.stringify({
+      rawText: "",
+      parsed: {
+        broker: "Webull",
+        accountId: "CTH4675306",
+        side: "buy",
+        ticker: "ASTS",
+        exchange: "NASDAQ",
+        qty: "16.85569",
+        price: "64.0733",
+        stockValue: "1080.00",
+      },
+    }));
+    expect(p.accountId).toBe("acc_webull");
+  });
+
+  it("derives accountId from the broker when the model omits it", () => {
+    const p = parseOcrResponse(JSON.stringify({
+      rawText: "",
+      parsed: { broker: "Dime", side: "buy", ticker: "RDW", qty: "10", price: "5" },
+    }));
+    expect(p.accountId).toBe("acc_dime");
+  });
+
+  it("keeps a valid acc_* accountId as-is", () => {
+    const p = parseOcrResponse(JSON.stringify({
+      rawText: "",
+      parsed: { broker: "Webull", accountId: "acc_webull", side: "buy", ticker: "ASTS", qty: "1", price: "1" },
+    }));
+    expect(p.accountId).toBe("acc_webull");
+  });
+
+  it("captures THB funding and derives USD fee deterministically (Dime! Fast)", () => {
+    // The QQQ slip: ฿2,000.28 paid @ 33.80, price 523.93 USD, 0.1127809 shares.
+    const p = parseOcrResponse(JSON.stringify({
+      rawText: "",
+      parsed: {
+        broker: "Dime", accountId: "acc_dime", side: "buy", ticker: "QQQ", exchange: "NASDAQ",
+        qty: "0.1127809", price: "523.93", stockValue: null,
+        fees: "3.04", fxRate: "33.80", thbTotal: "2000.28",
+      },
+    }));
+    eq(p.fxRate, "33.80");
+    eq(p.thbCost, "2000.28");
+    // fees(USD) = 2000.28/33.80 − 0.1127809×523.93 ≈ 0.09 (NOT the raw ฿3.04)
+    expect(p.fees).not.toBeNull();
+    const feesUsd = Number(p.fees);
+    expect(feesUsd).toBeGreaterThan(0.05);
+    expect(feesUsd).toBeLessThan(0.15);
+  });
+
+  it("leaves fxRate/thbCost null for USD-funded trades", () => {
+    const p = parseOcrResponse(JSON.stringify({
+      rawText: "",
+      parsed: { broker: "Webull", accountId: "acc_webull", side: "buy", ticker: "ASTS", qty: "1", price: "100", fees: "2" },
+    }));
+    expect(p.fxRate).toBeNull();
+    expect(p.thbCost).toBeNull();
+    eq(p.fees, "2");
+  });
+
+  it("parses a THB-funded Dime slip from text (rate after '=', THB→USD)", () => {
+    const DIME_QQQ_THB = `
+ซื้อ QQQ
+NASDAQ
+2,000.28 THB
+ราคาที่ได้จริง 523.93 USD
+จำนวนหุ้น 0.1127809
+มูลค่าหุ้น 1,997.24 THB
+ค่าคอมมิชชัน 2.84 THB
+ภาษีมูลค่าเพิ่ม 7% (VAT) 0.20 THB
+อัตราแลกเปลี่ยน 1 USD = 33.80 THB
+จำนวนเงิน (USD) 59.18 USD
+5 ก.พ. 68 - 00:11 น.
+`;
+    const p = parseOcrText(DIME_QQQ_THB);
+    expect(p.broker).toBe("Dime");
+    expect(p.side).toBe("buy");
+    expect(p.ticker).toBe("QQQ");
+    eq(p.fxRate, "33.80"); // not the leading "1" of "1 USD = 33.80"
+    eq(p.price, "523.93");
+    eq(p.thbCost, "2000.28"); // 1,997.24 + (2.84 + 0.20)
+    expect(Number(p.stockValue)).toBeGreaterThan(58.5); // 1997.24/33.80 ≈ 59.09
+    expect(Number(p.stockValue)).toBeLessThan(59.5);
+    expect(Number(p.fees)).toBeGreaterThan(0.05); // 3.04/33.80 ≈ 0.09
+    expect(Number(p.fees)).toBeLessThan(0.15);
+  });
+
   it("does not fill an explicit null quantity from fallback text", () => {
     const p = parseOcrResponse(JSON.stringify({
       rawText: DIME_RDW_BUY,

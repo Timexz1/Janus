@@ -171,8 +171,8 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-slate-500">{t("settings.subtitle")}</p>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.72fr)] min-[2200px]:grid-cols-[minmax(0,1fr)_minmax(520px,0.62fr)]">
-        <div className="space-y-4">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="flex h-full min-w-0 flex-col gap-4">
       <Card className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-200">ภาษี</h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -212,7 +212,7 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card className="space-y-3">
+      <Card className="flex flex-1 flex-col space-y-3">
         <h2 className="text-sm font-semibold text-slate-200">{t("settings.display")}</h2>
         <Toggle
           label="แสดงเมตริกขั้นสูงในแดชบอร์ด"
@@ -228,9 +228,52 @@ export default function SettingsPage() {
         />
         <ThemeLanguageControls />
       </Card>
+
+      <Card className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-200">บัญชีโบรกเกอร์</h2>
+        <ul className="divide-y divide-slate-800">
+          {accounts.map((a) => (
+            <li key={a.id} className="flex items-center gap-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm text-slate-200">{a.broker}</p>
+                <p className="text-xs text-slate-500">{a.accountLabel} · {a.currency}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => deleteAccount(a.id)}
+                className="ml-auto rounded p-1.5 text-rose-400/80 hover:bg-rose-950/40 hover:text-rose-300"
+                aria-label="ลบบัญชี"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <Field label="โบรกเกอร์" htmlFor="a-broker">
+            <Input id="a-broker" placeholder="เช่น IBKR" value={broker} onChange={(e) => setBroker(e.target.value)} />
+          </Field>
+          <Field label="ชื่อบัญชี" htmlFor="a-label">
+            <Input id="a-label" placeholder="ชื่อเรียก" value={label} onChange={(e) => setLabel(e.target.value)} />
+          </Field>
+          <div className="flex items-end">
+            <Button
+              className="w-full"
+              disabled={!broker.trim()}
+              onClick={() => {
+                addAccount({ broker: broker.trim(), accountLabel: label.trim() || broker.trim(), currency: "USD" });
+                setBroker("");
+                setLabel("");
+              }}
+            >
+              <Plus className="h-4 w-4" aria-hidden /> เพิ่มบัญชี
+            </Button>
+          </div>
+        </div>
+      </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex h-full min-w-0 flex-col gap-4">
       <Card className="space-y-3">
         <h2 className="text-sm font-semibold text-slate-200">OCR Provider (อ่าน screenshot)</h2>
         <p className="text-xs text-slate-500">
@@ -326,8 +369,8 @@ export default function SettingsPage() {
             ? `● ตั้งค่า ${ocrProviderLabel} key แล้ว — เปิดใช้ OCR ได้`
             : `○ ยังไม่ได้ตั้งค่า ${ocrProviderLabel} key`}
         </p>
-        <p className="flex items-start gap-2 rounded-md border border-amber-900/40 bg-amber-950/10 px-3 py-2 text-xs leading-relaxed text-amber-200/70">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <p className="flex items-start gap-2 rounded-md border border-[color:var(--warning-border)] bg-[color:var(--warning-bg)] px-3 py-2 text-xs leading-relaxed text-[color:var(--warning-text)]">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning-strong)]" aria-hidden />
           <span>
             ความปลอดภัย: key เก็บใน <b>เบราว์เซอร์เครื่องนี้เท่านั้น</b> และถูกส่งผ่านเซิร์ฟเวอร์ของแอป
             (ไม่ยิงตรงไป provider จากหน้าเว็บ) สำหรับใช้งานหลายคน/โปรดักชัน แนะนำตั้ง{" "}
@@ -336,50 +379,7 @@ export default function SettingsPage() {
         </p>
       </Card>
 
-      <Card className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-200">บัญชีโบรกเกอร์</h2>
-        <ul className="divide-y divide-slate-800">
-          {accounts.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 py-2">
-              <div className="min-w-0">
-                <p className="text-sm text-slate-200">{a.broker}</p>
-                <p className="text-xs text-slate-500">{a.accountLabel} · {a.currency}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => deleteAccount(a.id)}
-                className="ml-auto rounded p-1.5 text-rose-400/80 hover:bg-rose-950/40 hover:text-rose-300"
-                aria-label="ลบบัญชี"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <Field label="โบรกเกอร์" htmlFor="a-broker">
-            <Input id="a-broker" placeholder="เช่น IBKR" value={broker} onChange={(e) => setBroker(e.target.value)} />
-          </Field>
-          <Field label="ชื่อบัญชี" htmlFor="a-label">
-            <Input id="a-label" placeholder="ชื่อเรียก" value={label} onChange={(e) => setLabel(e.target.value)} />
-          </Field>
-          <div className="flex items-end">
-            <Button
-              className="w-full"
-              disabled={!broker.trim()}
-              onClick={() => {
-                addAccount({ broker: broker.trim(), accountLabel: label.trim() || broker.trim(), currency: "USD" });
-                setBroker("");
-                setLabel("");
-              }}
-            >
-              <Plus className="h-4 w-4" aria-hidden /> เพิ่มบัญชี
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="space-y-2 border-rose-900/40">
+      <Card className="flex flex-1 flex-col space-y-2 border-rose-900/40">
         <h2 className="text-sm font-semibold text-rose-300">ลบข้อมูล</h2>
         <p className="text-xs text-slate-500">ล้างรายการเทรดทั้งหมด (ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น)</p>
         <Button

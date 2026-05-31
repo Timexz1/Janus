@@ -5,7 +5,7 @@ import { Plus, Trash2, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
 import { extractSaleEvents } from "@/lib/portfolio/portfolio";
-import { matchRemittances, toTaxableInputs } from "@/lib/tax/remittance";
+import { matchRemittances, toTaxableInputs, outboundFromTrades } from "@/lib/tax/remittance";
 import { APPORTIONMENT_LABELS } from "@/lib/tax/config";
 import { addRemittance, deleteRemittance } from "@/lib/store/local-store";
 import { Decimal, D, ZERO } from "@/lib/money/decimal";
@@ -55,13 +55,16 @@ export default function RemittancesPage() {
         .reduce((s, r) => s.plus(D(r.amountUsd)), ZERO),
     [remittances],
   );
-  const outboundTotal = useMemo(
+  const outboundManual = useMemo(
     () =>
       remittances
         .filter((r) => r.direction === "outbound")
         .reduce((s, r) => s.plus(D(r.amountUsd)), ZERO),
     [remittances],
   );
+  // THB-funded buys (Dime!) are themselves money sent abroad — fold them in.
+  const tradesOutbound = useMemo(() => outboundFromTrades(transactions), [transactions]);
+  const outboundTotal = outboundManual.plus(tradesOutbound.usd);
 
   if (!hydrated) return <Card className="h-48 animate-pulse" />;
 
@@ -95,7 +98,15 @@ export default function RemittancesPage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="โอนออกไปลงทุนสะสม" value={fmtUsd(outboundTotal)} hint="เงินต้น (ไม่เสียภาษี)" />
+        <StatCard
+          label="โอนออกไปลงทุนสะสม"
+          value={fmtUsd(outboundTotal)}
+          hint={
+            tradesOutbound.thb.gt(0)
+              ? `รวมซื้อด้วยบาท ${fmtThb(tradesOutbound.thb)} · เงินต้น (ไม่เสียภาษี)`
+              : "เงินต้น (ไม่เสียภาษี)"
+          }
+        />
         <StatCard label="นำกลับเข้าไทยสะสม" value={fmtUsd(inboundTotal)} hint="ส่วนกำไรเข้าฐานภาษี" />
         <StatCard label="กำไรที่เข้าฐานภาษี" value={fmtUsd(matchedGain)} hint="จาก match ขาเข้าไทย" />
         <StatCard label="กำไรค้างรอโอน" value={fmtUsd(unremitted)} hint="ยังไม่นำเข้า → ยังไม่เสียภาษี" />
@@ -173,7 +184,7 @@ export default function RemittancesPage() {
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-slate-200">{fmtUsd(r.amountUsd)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-slate-300">{r.fxRate}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-amber-300">
+                      <td className="px-4 py-3 text-right tabular-nums text-[color:var(--warning-strong)]">
                         {line ? fmtSignedUsd(line.gainUsdMatched) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-slate-100">

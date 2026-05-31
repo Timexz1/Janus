@@ -204,9 +204,9 @@ export default function TaxPage() {
         </Card>
       </div>
 
-      <Card className="border-amber-900/40 bg-amber-950/10">
-        <p className="flex items-start gap-2 text-xs leading-relaxed text-amber-200/80">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <Card className="border-[color:var(--warning-border)] bg-[color:var(--warning-bg)]">
+        <p className="flex items-start gap-2 text-xs leading-relaxed text-[color:var(--warning-text)]">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning-strong)]" aria-hidden />
           <span>{DISCLAIMER}</span>
         </p>
       </Card>

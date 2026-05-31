@@ -1,13 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-// Build redirect targets from a server-trusted origin only — never from the
-// client-controlled Origin/Host headers (open-redirect / host-header injection).
-// NEXT_PUBLIC_SITE_URL wins in production; req.nextUrl.origin is the safe fallback.
+const LOCAL_HOST_RE = /^(localhost|127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|\[::1\])(?::\d+)?$/i;
+
+// Build redirect targets from a server-trusted origin.
+// Host is accepted only for explicit local addresses because NextURL normalizes
+// 127.0.0.1 to localhost. Production still prefers NEXT_PUBLIC_SITE_URL.
 function siteOrigin(req: NextRequest) {
-  const host = req.nextUrl.hostname;
-  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  if (isLocal) return req.nextUrl.origin;
+  const host = req.headers.get("host");
+  if (host && LOCAL_HOST_RE.test(host)) {
+    const protocol = req.nextUrl.protocol.replace(/:$/, "") || "http";
+    return `${protocol}://${host}`;
+  }
   return process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin;
 }
 

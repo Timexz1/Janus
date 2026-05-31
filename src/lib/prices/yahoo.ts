@@ -6,9 +6,10 @@ import type { Candle } from "./types";
  * User-Agent (Yahoo rejects the default fetch UA). Same surface as the Stooq
  * provider, so sources stay swappable.
  */
-export async function fetchDailyCandles(ticker: string): Promise<Candle[]> {
+export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<Candle[]> {
   const symbol = encodeURIComponent(ticker.trim().toUpperCase());
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=5y&interval=1d`;
+  const safeRange = ["1y", "5y", "max"].includes(range) ? range : "5y";
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${safeRange}&interval=1d`;
 
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0" },

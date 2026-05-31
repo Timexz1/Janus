@@ -8,6 +8,8 @@ import { Decimal, D } from "@/lib/money/decimal";
 import { normalizeTrade } from "@/lib/engine/normalize";
 import { buildPortfolio } from "@/lib/portfolio/portfolio";
 import { addTransaction, getTransactions, getTaxSettings, saveTaxSettings } from "@/lib/store/local-store";
+import { isSupabaseConfigured, createClient } from "@/lib/supabase/client";
+import { uploadScreenshot } from "@/lib/store/screenshots";
 import { useStore } from "@/lib/store/hooks";
 import { CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL } from "@/lib/ocr/pricing";
 import type { Account, OcrProvider, StoredTransaction } from "@/lib/store/types";
@@ -38,6 +40,8 @@ interface RowFields {
   stockValue: string;
   fees: string;
   couponsWaived: string;
+  fxRate: string;
+  thbCost: string;
   executedAtLocal: string;
 }
 
@@ -106,6 +110,8 @@ function emptyFields(): RowFields {
     stockValue: "",
     fees: "0",
     couponsWaived: "",
+    fxRate: "",
+    thbCost: "",
     executedAtLocal: isoToLocalInput(new Date().toISOString()),
   };
 }
@@ -135,6 +141,8 @@ function fieldsFromParsed(p: ParsedTrade): RowFields {
     stockValue: p.stockValue ?? "",
     fees: netFeeStr(p.fees, p.couponsWaived), // coupon folded into the fee
     couponsWaived: "",
+    fxRate: p.fxRate ?? "",
+    thbCost: p.thbCost ?? "",
     executedAtLocal: p.executedAt
       ? isoToLocalInput(p.executedAt)
       : isoToLocalInput(new Date().toISOString()),
@@ -241,6 +249,11 @@ function toStored(f: RowFields, id: string): StoredTransaction {
     stockValue: f.stockValue.trim() === "" ? null : f.stockValue,
     fees: f.fees,
     couponsWaived: f.couponsWaived.trim() === "" ? null : f.couponsWaived,
+    // THB-funded buys (Dime!): the buy is also a money-out event (principal sent
+    // abroad). Only meaningful on buys; never fabricate on a USD sell.
+    fxRate: f.side === "buy" && f.fxRate.trim() !== "" ? f.fxRate : null,
+    thbCost: f.side === "buy" && f.thbCost.trim() !== "" ? f.thbCost : null,
+    imagePath: null,
     executedAt: localInputToIso(f.executedAtLocal),
     executedTz: "Asia/Bangkok",
     createdAt: new Date().toISOString(),
@@ -393,7 +406,7 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
     setPreviewRowId((current) => (current === id ? null : current));
   }
 
-  function confirmAll() {
+  async function confirmAll() {
     setBatchError(null);
     if (rows.length === 0) return;
 
@@ -438,8 +451,22 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
       return;
     }
 
-    // 3) commit
-    for (const r of validated) addTransaction(toStored(r.fields, r.id));
+    // 3) commit — upload each row's screenshot first (best-effort: a failed
+    // upload just leaves imagePath null, it never blocks saving the trade).
+    setRunning(true);
+    let uid: string | null = null;
+    if (isSupabaseConfigured()) {
+      try {
+        uid = (await createClient().auth.getUser()).data.user?.id ?? null;
+      } catch {
+        uid = null;
+      }
+    }
+    for (const r of validated) {
+      const imagePath = uid && r.dataUrl ? await uploadScreenshot(uid, r.dataUrl) : null;
+      addTransaction({ ...toStored(r.fields, r.id), imagePath });
+    }
+    setRunning(false);
     router.push("/transactions");
   }
 
@@ -464,7 +491,7 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
   return (
     <div className="space-y-4">
       {/* Upload zone */}
-      <Card className="border-dashed p-3">
+      <Card className="overflow-hidden border-dashed p-3">
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
@@ -486,7 +513,7 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
               </p>
             </div>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:ml-auto lg:justify-end min-[1500px]:flex-nowrap">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:ml-auto lg:w-auto lg:justify-end min-[1500px]:flex-nowrap">
             <Button
               variant="outline"
               className="shrink-0 whitespace-nowrap"
@@ -516,7 +543,7 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
             <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">OCR</span>
             <Select
               aria-label="เลือก OCR provider"
-              className="w-32 shrink-0 py-1 text-xs"
+              className="!w-32 shrink-0 py-1 text-xs"
               value={ocrProvider}
               disabled={running}
               onChange={(e) => saveTaxSettings({ ocrProvider: e.target.value as OcrProvider })}
@@ -528,7 +555,7 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
             {ocrProvider === "claude" ? (
                 <Select
                   aria-label="เลือกโมเดล Claude OCR"
-                  className="w-48 shrink-0 py-1 text-xs"
+                  className="!w-48 shrink-0 py-1 text-xs"
                   value={claudeModel}
                   disabled={running}
                   onChange={(e) => saveTaxSettings({ claudeModel: e.target.value })}
@@ -542,7 +569,11 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
             ) : (
               <span className="shrink-0 whitespace-nowrap text-xs font-medium text-slate-300">{ocrLabel}</span>
             )}
-            {!ocrReady ? <span className="shrink-0 whitespace-nowrap text-xs text-amber-400">ยังไม่มี key</span> : null}
+            {!ocrReady ? (
+              <span className="shrink-0 whitespace-nowrap text-xs text-[color:var(--warning-strong)]">
+                ยังไม่มี key
+              </span>
+            ) : null}
             <Link href="/settings" className="shrink-0 whitespace-nowrap text-xs text-indigo-400 hover:underline">
               ตั้งค่า
             </Link>
@@ -815,7 +846,7 @@ function StatusCell({
 }) {
   const map: Record<RowStatus, { label: string; cls: string }> = {
     manual: { label: "กรอกเอง", cls: "text-slate-400" },
-    pending: { label: "รอ OCR", cls: "text-amber-400" },
+    pending: { label: "รอ OCR", cls: "text-[color:var(--warning-strong)]" },
     processing: { label: "กำลังอ่าน…", cls: "text-indigo-300" },
     done: { label: "อ่านแล้ว", cls: "text-emerald-400" },
     error: { label: "OCR ไม่สำเร็จ", cls: "text-rose-300" },
@@ -857,7 +888,7 @@ function StatusCell({
               </span>
             ) : null}
           {isDup ? (
-            <span className="inline-block shrink-0 rounded bg-amber-950/60 px-1 text-[10px] text-amber-300">
+            <span className="inline-block shrink-0 rounded border border-[color:var(--warning-border)] bg-[color:var(--warning-bg)] px-1 text-[10px] text-[color:var(--warning-strong)]">
               ซ้ำ
             </span>
           ) : null}
@@ -867,7 +898,7 @@ function StatusCell({
                 onClick={onEdit}
                 title="แก้ข้อมูล"
                 aria-label="แก้ข้อมูล"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded border border-amber-900/70 bg-amber-950/30 text-amber-200 hover:bg-amber-900/40"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded border border-[color:var(--warning-border)] bg-[color:var(--warning-bg)] text-[color:var(--warning-strong)] hover:brightness-95"
               >
                 <PencilLine className="h-3 w-3" aria-hidden />
               </button>

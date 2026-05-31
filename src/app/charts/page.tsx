@@ -1,23 +1,101 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
 import { buildPortfolio } from "@/lib/portfolio/portfolio";
 import { ChartView, type TradeMarker } from "@/components/chart-view";
-import { Card, Select, EmptyState, StatCard } from "@/components/ui";
+import { Card, EmptyState, Select, StatCard } from "@/components/ui";
 import { ZERO } from "@/lib/money/decimal";
 import type { Candle } from "@/lib/prices/types";
-import { fmtUsd, fmtSignedUsd, fmtQty, fmtPrice, isoToNyDate, gainTone } from "@/lib/format";
+import {
+  fmtPrice,
+  fmtQty,
+  fmtSignedUsd,
+  fmtUsd,
+  gainTone,
+  isoToNyDate,
+} from "@/lib/format";
+import {
+  getChartState,
+  saveChartState,
+} from "@/lib/store/local-store";
+import type {
+  ChartDrawing,
+  ChartPeriod,
+  ChartTimeframe,
+} from "@/lib/store/types";
 
-const TIMEFRAMES = [
+const PERIODS: Array<{ key: ChartPeriod; months: number }> = [
+  { key: "1M", months: 1 },
   { key: "3M", months: 3 },
   { key: "6M", months: 6 },
+  { key: "YTD", months: -1 },
   { key: "1Y", months: 12 },
+  { key: "5Y", months: 60 },
   { key: "ALL", months: 0 },
-] as const;
+];
+
+const TIMEFRAMES: Array<{ key: ChartTimeframe; label: string }> = [
+  { key: "D", label: "D" },
+  { key: "W", label: "W" },
+  { key: "M", label: "M" },
+];
+
+function candleBucketKey(time: string, timeframe: ChartTimeframe) {
+  if (timeframe === "M") return time.slice(0, 7);
+  if (timeframe === "W") {
+    const d = new Date(`${time}T00:00:00Z`);
+    const day = d.getUTCDay();
+    d.setUTCDate(d.getUTCDate() - ((day + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+  return time;
+}
+
+function aggregateCandles(candles: Candle[], timeframe: ChartTimeframe): Candle[] {
+  if (timeframe === "D") return candles;
+  const grouped = new Map<string, Candle>();
+  for (const candle of candles) {
+    const key = candleBucketKey(candle.time, timeframe);
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, { ...candle });
+      continue;
+    }
+    current.high = Math.max(current.high, candle.high);
+    current.low = Math.min(current.low, candle.low);
+    current.close = candle.close;
+    current.time = candle.time;
+  }
+  return [...grouped.values()];
+}
+
+function markerTimeMap(candles: Candle[], timeframe: ChartTimeframe) {
+  const bucketCloseTime = new Map<string, string>();
+  for (const candle of candles) {
+    bucketCloseTime.set(candleBucketKey(candle.time, timeframe), candle.time);
+  }
+  const mapped = new Map<string, string>();
+  for (const candle of candles) {
+    const closeTime = bucketCloseTime.get(candleBucketKey(candle.time, timeframe));
+    if (closeTime) mapped.set(candle.time, closeTime);
+  }
+  return mapped;
+}
+
+function filterByPeriod(candles: Candle[], period: ChartPeriod) {
+  if (candles.length === 0) return [];
+  const setting = PERIODS.find((p) => p.key === period) ?? PERIODS[4];
+  const last = candles[candles.length - 1].time;
+  if (setting.months === 0) return candles;
+  if (setting.months === -1) return candles.filter((c) => c.time >= `${last.slice(0, 4)}-01-01`);
+  const cutoff = new Date(last);
+  cutoff.setMonth(cutoff.getMonth() - setting.months);
+  return candles.filter((c) => c.time >= cutoff.toISOString().slice(0, 10));
+}
 
 function ChartsInner() {
   const urlTicker = useSearchParams().get("ticker");
@@ -32,21 +110,37 @@ function ChartsInner() {
     [transactions],
   );
   const [tickerOverride, setTickerOverride] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]["key"]>("1Y");
+  const [period, setPeriod] = useState<ChartPeriod>("1Y");
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>("D");
+  const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadedTickerRef = useRef<string | null>(null);
+
   const ticker = tickerOverride ?? urlTicker?.toUpperCase() ?? tickers[0] ?? "";
 
-  // prefer the ticker from the URL (?ticker=) — works even for a symbol the user
-  // hasn't traded yet (future-proof: just shows its price chart) — else first held
-  // the dropdown always includes the selected ticker, even if not yet traded
   const tickerOptions = useMemo(
     () => Array.from(new Set([...tickers, ticker].filter(Boolean))).sort(),
     [tickers, ticker],
   );
 
-  // fetch real candles when the ticker changes
+  useEffect(() => {
+    if (!hydrated || !ticker) return;
+    queueMicrotask(() => {
+      const saved = getChartState(ticker);
+      setPeriod(saved?.period ?? "1Y");
+      setTimeframe(saved?.timeframe ?? "D");
+      setDrawings(saved?.drawings ?? []);
+      loadedTickerRef.current = ticker;
+    });
+  }, [hydrated, ticker]);
+
+  useEffect(() => {
+    if (!hydrated || !ticker || loadedTickerRef.current !== ticker) return;
+    saveChartState(ticker, { period, timeframe, drawings });
+  }, [drawings, hydrated, period, ticker, timeframe]);
+
   useEffect(() => {
     if (!ticker) {
       queueMicrotask(() => {
@@ -56,14 +150,16 @@ function ChartsInner() {
       });
       return;
     }
+
     let cancelled = false;
+    const range = period === "ALL" ? "max" : "5y";
     queueMicrotask(() => {
       if (!cancelled) {
         setLoading(true);
         setError(null);
       }
     });
-    fetch(`/api/prices?ticker=${encodeURIComponent(ticker)}`)
+    fetch(`/api/prices?ticker=${encodeURIComponent(ticker)}&range=${range}`)
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
@@ -75,19 +171,22 @@ function ChartsInner() {
     return () => {
       cancelled = true;
     };
-  }, [ticker]);
+  }, [period, ticker]);
 
-  // filter to the chosen timeframe, relative to the latest candle (robust to clock)
-  const visible = useMemo(() => {
-    if (candles.length === 0) return [];
-    const tf = TIMEFRAMES.find((t) => t.key === timeframe)!;
-    if (tf.months === 0) return candles;
-    const last = candles[candles.length - 1].time;
-    const cutoff = new Date(last);
-    cutoff.setMonth(cutoff.getMonth() - tf.months);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    return candles.filter((c) => c.time >= cutoffStr);
-  }, [candles, timeframe]);
+  const dailyVisible = useMemo(
+    () => filterByPeriod(candles, period),
+    [candles, period],
+  );
+
+  const visible = useMemo(
+    () => aggregateCandles(dailyVisible, timeframe),
+    [dailyVisible, timeframe],
+  );
+
+  const markerTimes = useMemo(
+    () => markerTimeMap(dailyVisible, timeframe),
+    [dailyVisible, timeframe],
+  );
 
   const tradesForTicker = useMemo(
     () => transactions.filter((t) => t.ticker === ticker),
@@ -96,15 +195,19 @@ function ChartsInner() {
 
   const markers: TradeMarker[] = useMemo(
     () =>
-      tradesForTicker.map((t) => ({
-        time: isoToNyDate(t.executedAt),
-        side: t.side,
-        text: `${t.side === "buy" ? "ซื้อ" : "ขาย"} ${fmtQty(t.qty)}`,
-      })),
-    [tradesForTicker],
+      tradesForTicker.flatMap((t) => {
+        const tradeDay = isoToNyDate(t.executedAt);
+        const time = markerTimes.get(tradeDay);
+        if (!time) return [];
+        return [{
+          time,
+          side: t.side,
+          text: `${t.side === "buy" ? "ซื้อ" : "ขาย"} ${fmtQty(t.qty)}`,
+        }];
+      }),
+    [markerTimes, tradesForTicker],
   );
 
-  // avg cost across all accounts for this ticker
   const avgCost = useMemo(() => {
     const hs = portfolio.holdings.filter((h) => h.ticker === ticker);
     if (hs.length === 0) return null;
@@ -131,7 +234,6 @@ function ChartsInner() {
   const buys = tradesForTicker.filter((t) => t.side === "buy").length;
   const sells = tradesForTicker.filter((t) => t.side === "sell").length;
 
-  // current position status (unrealized P/L) for the selected ticker
   const heldQtyNum = Number(heldQty.toString());
   const marketValue = lastClose != null ? heldQtyNum * lastClose : null;
   const costValue = avgCost != null ? heldQtyNum * avgCost : null;
@@ -166,21 +268,28 @@ function ChartsInner() {
             ))}
           </Select>
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-slate-800 p-0.5">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf.key}
-              onClick={() => setTimeframe(tf.key)}
-              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                timeframe === tf.key
-                  ? "bg-slate-800 text-slate-100"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
+        <Segmented label="Period">
+          {PERIODS.map((p) => (
+            <SegmentButton
+              key={p.key}
+              active={period === p.key}
+              onClick={() => setPeriod(p.key)}
             >
-              {tf.key}
-            </button>
+              {p.key}
+            </SegmentButton>
           ))}
-        </div>
+        </Segmented>
+        <Segmented label="Timeframe">
+          {TIMEFRAMES.map((tf) => (
+            <SegmentButton
+              key={tf.key}
+              active={timeframe === tf.key}
+              onClick={() => setTimeframe(tf.key)}
+            >
+              {tf.label}
+            </SegmentButton>
+          ))}
+        </Segmented>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -226,9 +335,9 @@ function ChartsInner() {
       </div>
 
       <Card>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-200">
-            {ticker} · ราคาจริง (รายวัน)
+            {ticker} · ราคาจริง ({timeframe})
           </h2>
           <div className="flex items-center gap-3 text-xs text-slate-400">
             <span className="flex items-center gap-1">
@@ -254,10 +363,59 @@ function ChartsInner() {
             ไม่พบข้อมูลราคาของ {ticker} จาก Yahoo Finance
           </div>
         ) : (
-          <ChartView candles={visible} markers={markers} avgCost={avgCost} height={420} />
+          <ChartView
+            candles={visible}
+            markers={markers}
+            avgCost={avgCost}
+            drawings={drawings}
+            onDrawingsChange={setDrawings}
+            height={420}
+            drawingKey={`${ticker}:${period}:${timeframe}`}
+          />
         )}
       </Card>
     </div>
+  );
+}
+
+function Segmented({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-slate-500">{label}</span>
+      <div className="flex items-center gap-1 rounded-md border border-slate-800 p-0.5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SegmentButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "bg-slate-800 text-slate-100"
+          : "text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -267,7 +425,7 @@ function Header() {
     <header>
       <h1 className="text-lg font-semibold text-slate-100">{t("charts.title")}</h1>
       <p className="mt-1 text-sm text-slate-500">
-        ราคาจริงรายวัน (Yahoo Finance) พร้อมจุดซื้อ/ขายของคุณและเส้นต้นทุนเฉลี่ย
+        ราคาจริงจาก Yahoo Finance พร้อมจุดซื้อ/ขาย ต้นทุนเฉลี่ย และเครื่องมือวาดที่บันทึกไว้ต่อหุ้น
       </p>
     </header>
   );

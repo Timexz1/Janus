@@ -20,6 +20,9 @@ const SAMPLE: StoredTransaction[] = [
     stockValue: "2719.00",
     fees: "2.91",
     couponsWaived: null,
+    fxRate: null,
+    thbCost: null,
+    imagePath: null,
     executedAt: "2026-05-08T18:33:52Z", // 08/05/2026 14:33:52 EDT
     executedTz: "America/New_York",
     createdAt: "2026-05-08T18:33:52Z",
@@ -35,6 +38,9 @@ const SAMPLE: StoredTransaction[] = [
     stockValue: "2451.9519",
     fees: "2.69",
     couponsWaived: null,
+    fxRate: null,
+    thbCost: null,
+    imagePath: null,
     executedAt: "2026-05-27T18:16:56Z", // 27/05/2026 14:16:56 EDT
     executedTz: "America/New_York",
     createdAt: "2026-05-27T18:16:56Z",
@@ -50,6 +56,9 @@ const SAMPLE: StoredTransaction[] = [
     stockValue: "180.86",
     fees: "0.29", // commission 0.27 + VAT 0.02
     couponsWaived: null,
+    fxRate: null,
+    thbCost: null,
+    imagePath: null,
     executedAt: "2025-10-07T18:38:00Z", // 8 ต.ค. 68 - 01:38 น. (Asia/Bangkok)
     executedTz: "Asia/Bangkok",
     createdAt: "2025-10-07T18:38:00Z",
