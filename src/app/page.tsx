@@ -140,37 +140,65 @@ export default function DashboardPage() {
       : quoteSource?.startsWith("alpaca-") ? "Alpaca stream" : "Yahoo live"
     : "รอราคา...";
 
+  const todayChangePct = hasPrices && pricedCost.gt(0) && !todayChangeUsd.isZero()
+    ? todayChangeUsd.div(pricedCost).times(100).toNumber()
+    : null;
+  const todayTone = !todayChangeUsd.isZero() ? gainTone(todayChangeUsd) : "default";
+  const todayColor = todayTone === "positive" ? "text-emerald-400" : todayTone === "negative" ? "text-rose-400" : "text-slate-400";
+
   return (
     <div className="space-y-6">
       <PageHeader />
 
+      {/* ─── Portfolio hero banner ────────────────────────────────── */}
+      <div className="rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 px-6 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          {/* Left: total value */}
+          <div>
+            <p className="text-xs font-medium uppercase tracking-widest text-slate-500">มูลค่าทรัพย์สินทั้งหมด</p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-100">
+              {hasPrices && fxRate ? fmtThb(marketValue.times(fxRate)) : "—"}
+            </p>
+            <p className="mt-0.5 text-sm tabular-nums text-slate-400">
+              {hasPrices ? fmtUsd(marketValue) : "—"}
+            </p>
+          </div>
+
+          {/* Right: today's change + FX rate */}
+          <div className="flex flex-wrap gap-8 text-right">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-widest text-slate-500">วันนี้</p>
+              <p className={`mt-1 text-xl font-semibold tabular-nums ${todayChangeUsd.isZero() ? "text-slate-400" : todayColor}`}>
+                {todayChangeUsd.isZero() ? "—" : fmtSignedUsd(todayChangeUsd)}
+              </p>
+              <p className={`mt-0.5 text-sm tabular-nums ${todayChangePct == null ? "text-slate-500" : todayColor}`}>
+                {todayChangePct != null ? fmtPct(todayChangePct) : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-widest text-slate-500">USD / THB</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-100">
+                {fxRate ? `฿${fxRate.toFixed(2)}` : "—"}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {fxAsOf ? fmtDateTimeBangkok(fxAsOf) : "Yahoo Finance"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ─── Summary stats ───────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
-        {/* Row 1: portfolio value in USD */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           label="ต้นทุนรวม (เปิดอยู่)"
           value={fmtUsd(portfolio.totalOpenCost)}
           hint="FIFO ต้นทุนเฉลี่ย"
         />
         <StatCard
-          label="มูลค่าตลาด (USD)"
+          label="มูลค่าตลาด"
           value={hasPrices ? fmtUsd(marketValue) : "—"}
           hint={mvHint}
-        />
-        <StatCard
-          label="มูลค่าตลาด (THB)"
-          value={hasPrices && fxRate ? fmtThb(marketValue.times(fxRate)) : "—"}
-          hint={fxRate ? `฿${fxRate.toFixed(2)}/USD` : "รอ FX..."}
-        />
-        <StatCard
-          label="เปลี่ยนวันนี้ (USD)"
-          value={todayChangeUsd.isZero() ? "—" : fmtSignedUsd(todayChangeUsd)}
-          tone={!todayChangeUsd.isZero() ? gainTone(todayChangeUsd) : "default"}
-          hint={
-            hasPrices && pricedCost.gt(0) && !todayChangeUsd.isZero()
-              ? fmtPct(todayChangeUsd.div(pricedCost).times(100).toNumber())
-              : undefined
-          }
         />
         <StatCard
           label="กำไรยังไม่เกิด"
@@ -194,11 +222,6 @@ export default function DashboardPage() {
           label="ภาษีประมาณ (ปีนี้)"
           value={fmtThb(taxTotal)}
           hint={`Win rate ${metrics.winRatePct.toFixed(0)}%`}
-        />
-        <StatCard
-          label="อัตราแลกเปลี่ยน"
-          value={fxRate ? `฿${fxRate.toFixed(2)}` : "—"}
-          hint={fxAsOf ? fmtDateTimeBangkok(fxAsOf) : "USD/THB"}
         />
       </div>
 
