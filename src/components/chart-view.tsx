@@ -12,6 +12,8 @@ import {
 import {
   CandlestickSeries,
   ColorType,
+  HistogramSeries,
+  LineSeries,
   LineStyle,
   createChart,
   createSeriesMarkers,
@@ -22,7 +24,13 @@ import {
 } from "lightweight-charts";
 import { cn } from "@/components/ui";
 import type { Candle } from "@/lib/prices/types";
-import type { ChartDrawing, ChartLineStyle } from "@/lib/store/types";
+import type {
+  ChartDrawing,
+  ChartIndicators,
+  ChartLineStyle,
+  ChartTrendlineMode,
+  ChartVisibleRange,
+} from "@/lib/store/types";
 
 export interface TradeMarker {
   time: string;
@@ -30,11 +38,15 @@ export interface TradeMarker {
   text: string;
 }
 
-type DrawTool = "cursor" | "trendline" | "horizontal" | "vertical";
+type DrawTool = "cursor" | "trendline" | "horizontal" | "vertical" | "fibonacci";
+type TwoPointTool = Extract<DrawTool, "trendline" | "fibonacci">;
+type TwoAnchorDrawing = Extract<ChartDrawing, { type: "trendline" | "fibonacci" }>;
 type DragTarget =
   | { id: string; kind: "move"; start: EventPoint | null; drawing: ChartDrawing }
-  | { id: string; kind: "from"; drawing: Extract<ChartDrawing, { type: "trendline" }> }
-  | { id: string; kind: "to"; drawing: Extract<ChartDrawing, { type: "trendline" }> };
+  | { id: string; kind: "from"; drawing: TwoAnchorDrawing }
+  | { id: string; kind: "to"; drawing: TwoAnchorDrawing };
+
+type DraftPoint = Point & { logical?: number };
 
 interface Point {
   time: string;
@@ -62,10 +74,56 @@ const LINE_STYLES: Array<{ value: ChartLineStyle; label: string }> = [
   { value: "dashed", label: "Dash" },
   { value: "dotted", label: "Dot" },
 ];
+const TRENDLINE_MODES: Array<{ value: ChartTrendlineMode; label: string }> = [
+  { value: "segment", label: "Segment" },
+  { value: "ray", label: "Ray" },
+  { value: "extended", label: "Extend" },
+];
 const COLOR_SWATCHES = ["#f59e0b", "#38bdf8", "#22c55e", "#f43f5e", "#a855f7"];
+const MA_LINES: Array<{ key: keyof ChartIndicators; period: number; color: string; title: string }> = [
+  { key: "ma20", period: 20, color: "#38bdf8", title: "MA20" },
+  { key: "ma50", period: 50, color: "#a855f7", title: "MA50" },
+  { key: "ma200", period: 200, color: "#f59e0b", title: "MA200" },
+];
+const FIBONACCI_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 function nextDrawingId() {
   return globalThis.crypto?.randomUUID?.() ?? `drawing-${Date.now()}-${Math.random()}`;
+}
+
+function isTwoPointTool(tool: DrawTool): tool is TwoPointTool {
+  return tool === "trendline" || tool === "fibonacci";
+}
+
+function createTwoPointDrawing(
+  tool: TwoPointTool,
+  from: DraftPoint,
+  to: DraftPoint,
+  width: number,
+  color: string,
+  style: ChartLineStyle,
+): ChartDrawing {
+  if (tool === "fibonacci") {
+    return {
+      id: nextDrawingId(),
+      type: "fibonacci",
+      from,
+      to,
+      width,
+      color,
+      style,
+    };
+  }
+  return {
+    id: nextDrawingId(),
+    type: "trendline",
+    from,
+    to,
+    mode: "segment",
+    width,
+    color,
+    style,
+  };
 }
 
 function isTimeString(time: Time | null): time is string {
@@ -125,7 +183,19 @@ function shiftDrawing(drawing: ChartDrawing, dxLogical: number, dy: number, cand
     };
   };
   const copy = cloneDrawing(drawing);
-  if (copy.type === "horizontal") return { ...copy, price: copy.price + dy };
+  if (copy.type === "horizontal") {
+    if (candleTimes.length === 0) return { ...copy, price: copy.price + dy };
+    const fallbackLogical = copy.time == null
+      ? Math.floor(candleTimes.length / 2)
+      : nearestTimeIndex(copy.time, candleTimes);
+    const logical = (copy.logical ?? fallbackLogical) + dxLogical;
+    return {
+      ...copy,
+      price: copy.price + dy,
+      time: timeAtLogical(logical, candleTimes) || copy.time,
+      logical,
+    };
+  }
   if (copy.type === "vertical") {
     const logical = (copy.logical ?? nearestTimeIndex(copy.time, candleTimes)) + dxLogical;
     return { ...copy, time: timeAtLogical(logical, candleTimes) || copy.time, logical };
@@ -143,12 +213,105 @@ function lineDash(style: ChartLineStyle | undefined) {
   return undefined;
 }
 
+function extendTrendlineToViewport(
+  from: ScreenPoint,
+  to: ScreenPoint,
+  width: number,
+  height: number,
+  mode: ChartTrendlineMode | undefined,
+) {
+  const trendMode = mode ?? "segment";
+  if (trendMode === "segment") return { from, to };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return { from, to };
+
+  const candidates: Array<{ t: number; point: ScreenPoint }> = [];
+  const push = (t: number, point: ScreenPoint) => {
+    if (
+      Number.isFinite(t) &&
+      point.x >= -1 &&
+      point.x <= width + 1 &&
+      point.y >= -1 &&
+      point.y <= height + 1
+    ) {
+      candidates.push({
+        t,
+        point: {
+          x: Math.max(0, Math.min(width, point.x)),
+          y: Math.max(0, Math.min(height, point.y)),
+        },
+      });
+    }
+  };
+
+  if (Math.abs(dx) > 0.001) {
+    const leftT = (0 - from.x) / dx;
+    push(leftT, { x: 0, y: from.y + leftT * dy });
+    const rightT = (width - from.x) / dx;
+    push(rightT, { x: width, y: from.y + rightT * dy });
+  }
+  if (Math.abs(dy) > 0.001) {
+    const topT = (0 - from.y) / dy;
+    push(topT, { x: from.x + topT * dx, y: 0 });
+    const bottomT = (height - from.y) / dy;
+    push(bottomT, { x: from.x + bottomT * dx, y: height });
+  }
+
+  const unique = candidates
+    .filter((candidate, index, all) =>
+      all.findIndex((other) =>
+        Math.abs(other.point.x - candidate.point.x) < 0.5 &&
+        Math.abs(other.point.y - candidate.point.y) < 0.5
+      ) === index,
+    )
+    .sort((a, b) => a.t - b.t);
+  if (unique.length === 0) return { from, to };
+
+  if (trendMode === "ray") {
+    const forward = unique.filter((candidate) => candidate.t >= 0);
+    const end = forward[forward.length - 1]?.point ?? to;
+    return { from, to: end };
+  }
+
+  return {
+    from: unique[0].point,
+    to: unique[unique.length - 1].point,
+  };
+}
+
+function movingAverageData(candles: Candle[], period: number) {
+  const data: Array<{ time: string; value: number }> = [];
+  let sum = 0;
+  candles.forEach((candle, index) => {
+    sum += candle.close;
+    if (index >= period) sum -= candles[index - period].close;
+    if (index >= period - 1) {
+      data.push({
+        time: candle.time,
+        value: sum / period,
+      });
+    }
+  });
+  return data;
+}
+
+function formatCompactVolume(volume: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(volume);
+}
+
 export function ChartView({
   candles,
   markers,
   avgCost,
   drawings,
+  indicators,
+  visibleRange,
   onDrawingsChange,
+  onVisibleRangeChange,
   height = 420,
   drawingKey,
 }: {
@@ -156,7 +319,10 @@ export function ChartView({
   markers: TradeMarker[];
   avgCost: number | null;
   drawings: ChartDrawing[];
+  indicators: ChartIndicators;
+  visibleRange: ChartVisibleRange | null;
   onDrawingsChange: (drawings: ChartDrawing[]) => void;
+  onVisibleRangeChange: (range: ChartVisibleRange | null) => void;
   height?: number;
   drawingKey?: string;
 }) {
@@ -164,13 +330,26 @@ export function ChartView({
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const toolRef = useRef<DrawTool>("cursor");
-  const draftRef = useRef<(Point & { logical?: number }) | null>(null);
+  const draftRef = useRef<DraftPoint | null>(null);
+  const drawDragRef = useRef<{ start: EventPoint; moved: boolean; tool: TwoPointTool } | null>(null);
   const dragRef = useRef<DragTarget | null>(null);
   const drawingsRef = useRef<ChartDrawing[]>(drawings);
+  const visibleRangeRef = useRef<ChartVisibleRange | null>(visibleRange);
+  const onVisibleRangeChangeRef = useRef(onVisibleRangeChange);
+  const lastVisibleRangeKeyRef = useRef("");
+  const pendingDragRef = useRef<{ id: string; drawing: ChartDrawing } | null>(null);
+  const liveDragRef = useRef<{ id: string; drawing: ChartDrawing } | null>(null);
+  const dragFrameRef = useRef<number | null>(null);
+  const drawingDragLockedRef = useRef(false);
 
   const [tool, setTool] = useState<DrawTool>("cursor");
-  const [draft, setDraft] = useState<(Point & { logical?: number }) | null>(null);
+  const [draft, setDraft] = useState<DraftPoint | null>(null);
+  const [draftTo, setDraftTo] = useState<DraftPoint | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [defaultLineWidth, setDefaultLineWidth] = useState(DEFAULT_LINE_WIDTH);
+  const [defaultLineStyle, setDefaultLineStyle] = useState<ChartLineStyle>(DEFAULT_LINE_STYLE);
+  const [defaultDrawingColor, setDefaultDrawingColor] = useState(DEFAULT_DRAWING_COLOR);
+  const [liveDrag, setLiveDrag] = useState<{ id: string; drawing: ChartDrawing } | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [, rerenderOverlay] = useState(0);
@@ -191,9 +370,23 @@ export function ChartView({
   }, [drawings]);
 
   useEffect(() => {
+    visibleRangeRef.current = visibleRange;
+  }, [visibleRange]);
+
+  useEffect(() => {
+    onVisibleRangeChangeRef.current = onVisibleRangeChange;
+  }, [onVisibleRangeChange]);
+
+  useEffect(() => {
     queueMicrotask(() => {
+      drawDragRef.current = null;
+      dragRef.current = null;
+      pendingDragRef.current = null;
+      liveDragRef.current = null;
       setTool("cursor");
       setDraft(null);
+      setDraftTo(null);
+      setLiveDrag(null);
       setSelectedId(null);
     });
   }, [drawingKey]);
@@ -203,9 +396,42 @@ export function ChartView({
     onDrawingsChange(next);
   }, [onDrawingsChange]);
 
+  const setChartInteraction = useCallback((enabled: boolean) => {
+    chartRef.current?.applyOptions({
+      handleScroll: enabled,
+      handleScale: enabled,
+    });
+  }, []);
+
   const updateDrawing = useCallback((id: string, next: ChartDrawing) => {
     setDrawingList(drawingsRef.current.map((drawing) => (drawing.id === id ? next : drawing)));
   }, [setDrawingList]);
+
+  const flushPendingDrag = useCallback(() => {
+    const pending = pendingDragRef.current ?? liveDragRef.current;
+    pendingDragRef.current = null;
+    liveDragRef.current = null;
+    if (dragFrameRef.current != null) {
+      window.cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+    }
+    setLiveDrag(null);
+    if (pending) updateDrawing(pending.id, pending.drawing);
+  }, [updateDrawing]);
+
+  const scheduleDragUpdate = useCallback((id: string, drawing: ChartDrawing) => {
+    pendingDragRef.current = { id, drawing };
+    if (dragFrameRef.current != null) return;
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      const pending = pendingDragRef.current;
+      pendingDragRef.current = null;
+      if (pending) {
+        liveDragRef.current = pending;
+        setLiveDrag(pending);
+      }
+    });
+  }, []);
 
   const eventToPoint = useCallback((event: { clientX: number; clientY: number }): EventPoint | null => {
     const chart = chartRef.current;
@@ -252,9 +478,9 @@ export function ChartView({
         price: point.price,
         time: point.time,
         logical: point.logical,
-        width: DEFAULT_LINE_WIDTH,
-        color: DEFAULT_DRAWING_COLOR,
-        style: DEFAULT_LINE_STYLE,
+        width: defaultLineWidth,
+        color: defaultDrawingColor,
+        style: defaultLineStyle,
       };
       setDrawingList([...drawingsRef.current, drawing]);
       setSelectedId(drawing.id);
@@ -268,9 +494,9 @@ export function ChartView({
         type: "vertical",
         time: point.time,
         logical: point.logical,
-        width: DEFAULT_LINE_WIDTH,
-        color: DEFAULT_DRAWING_COLOR,
-        style: DEFAULT_LINE_STYLE,
+        width: defaultLineWidth,
+        color: defaultDrawingColor,
+        style: defaultLineStyle,
       };
       setDrawingList([...drawingsRef.current, drawing]);
       setSelectedId(drawing.id);
@@ -278,27 +504,31 @@ export function ChartView({
       return;
     }
 
+    if (!isTwoPointTool(activeTool)) return;
+
     const currentDraft = draftRef.current;
     if (!currentDraft) {
       setDraft({ time: point.time, price: point.price, logical: point.logical });
+      setDraftTo({ time: point.time, price: point.price, logical: point.logical });
+      drawDragRef.current = { start: point, moved: false, tool: activeTool };
       setSelectedId(null);
       return;
     }
 
-    const drawing: ChartDrawing = {
-      id: nextDrawingId(),
-      type: "trendline",
-      from: currentDraft,
-      to: { time: point.time, price: point.price, logical: point.logical },
-      width: DEFAULT_LINE_WIDTH,
-      color: DEFAULT_DRAWING_COLOR,
-      style: DEFAULT_LINE_STYLE,
-    };
+    const drawing = createTwoPointDrawing(
+      activeTool,
+      currentDraft,
+      { time: point.time, price: point.price, logical: point.logical },
+      defaultLineWidth,
+      defaultDrawingColor,
+      defaultLineStyle,
+    );
     setDrawingList([...drawingsRef.current, drawing]);
     setSelectedId(drawing.id);
     setDraft(null);
+    setDraftTo(null);
     setTool("cursor");
-  }, [eventToPoint, setDrawingList]);
+  }, [defaultDrawingColor, defaultLineStyle, defaultLineWidth, eventToPoint, setDrawingList]);
 
   const deleteSelected = useCallback(() => {
     if (!selectedId) return;
@@ -307,44 +537,91 @@ export function ChartView({
   }, [selectedId, setDrawingList]);
 
   const selectedDrawing = useMemo(
-    () => drawings.find((drawing) => drawing.id === selectedId) ?? null,
-    [drawings, selectedId],
+    () => {
+      if (liveDrag && liveDrag.id === selectedId) return liveDrag.drawing;
+      return drawings.find((drawing) => drawing.id === selectedId) ?? null;
+    },
+    [drawings, liveDrag, selectedId],
   );
 
-  const selectedWidth = selectedDrawing?.width ?? DEFAULT_LINE_WIDTH;
-  const selectedStyle = selectedDrawing?.style ?? DEFAULT_LINE_STYLE;
-  const selectedColor = selectedDrawing?.color ?? DEFAULT_DRAWING_COLOR;
+  const displayDrawings = useMemo(() => {
+    if (!liveDrag) return drawings;
+    return drawings.map((drawing) => (drawing.id === liveDrag.id ? liveDrag.drawing : drawing));
+  }, [drawings, liveDrag]);
 
-  const updateSelectedWidth = useCallback((width: number) => {
+  const activeWidth = selectedDrawing?.width ?? defaultLineWidth;
+  const activeStyle = selectedDrawing?.style ?? defaultLineStyle;
+  const activeColor = selectedDrawing?.color ?? defaultDrawingColor;
+  const selectedWidth = activeWidth;
+  const selectedStyle = activeStyle;
+  const selectedColor = activeColor;
+  const selectedTrendlineMode =
+    selectedDrawing?.type === "trendline" ? (selectedDrawing.mode ?? "segment") : "segment";
+
+  const updateActiveWidth = useCallback((width: number) => {
+    setDefaultLineWidth(width);
     if (!selectedId) return;
     setDrawingList(drawingsRef.current.map((drawing) => (
       drawing.id === selectedId ? { ...drawing, width } : drawing
     )));
   }, [selectedId, setDrawingList]);
 
-  const updateSelectedStyle = useCallback((style: ChartLineStyle) => {
+  const updateActiveStyle = useCallback((style: ChartLineStyle) => {
+    setDefaultLineStyle(style);
     if (!selectedId) return;
     setDrawingList(drawingsRef.current.map((drawing) => (
       drawing.id === selectedId ? { ...drawing, style } : drawing
     )));
   }, [selectedId, setDrawingList]);
 
-  const updateSelectedColor = useCallback((color: string) => {
+  const updateActiveColor = useCallback((color: string) => {
+    setDefaultDrawingColor(color);
     if (!selectedId) return;
     setDrawingList(drawingsRef.current.map((drawing) => (
       drawing.id === selectedId ? { ...drawing, color } : drawing
     )));
   }, [selectedId, setDrawingList]);
+  const updateSelectedWidth = updateActiveWidth;
+  const updateSelectedStyle = updateActiveStyle;
+  const updateSelectedColor = updateActiveColor;
+
+  const updateSelectedTrendlineMode = useCallback((mode: ChartTrendlineMode) => {
+    if (!selectedId) return;
+    setDrawingList(drawingsRef.current.map((drawing) => (
+      drawing.id === selectedId && drawing.type === "trendline"
+        ? { ...drawing, mode }
+        : drawing
+    )));
+  }, [selectedId, setDrawingList]);
 
   const clearDrawings = useCallback(() => {
     setDrawingList([]);
+    drawDragRef.current = null;
+    dragRef.current = null;
+    pendingDragRef.current = null;
+    liveDragRef.current = null;
     setDraft(null);
+    setDraftTo(null);
+    setLiveDrag(null);
     setSelectedId(null);
     setTool("cursor");
   }, [setDrawingList]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDraft(null);
+        setDraftTo(null);
+        drawDragRef.current = null;
+        dragRef.current = null;
+        pendingDragRef.current = null;
+        liveDragRef.current = null;
+        setLiveDrag(null);
+        drawingDragLockedRef.current = false;
+        setChartInteraction(true);
+        setTool("cursor");
+        return;
+      }
       if (!selectedId) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       event.preventDefault();
@@ -352,14 +629,69 @@ export function ChartView({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelected, selectedId]);
+  }, [deleteSelected, selectedId, setChartInteraction]);
 
   useEffect(() => {
-    chartRef.current?.applyOptions({
-      handleScroll: tool === "cursor",
-      handleScale: tool === "cursor",
-    });
-  }, [tool]);
+    const finishTwoPointDrag = (point: EventPoint | null) => {
+      const drag = drawDragRef.current;
+      drawDragRef.current = null;
+      if (!drag) return;
+      if (!drag.moved || !point) {
+        setDraftTo(null);
+        return;
+      }
+      const drawing = createTwoPointDrawing(
+        drag.tool,
+        {
+          time: drag.start.time,
+          price: drag.start.price,
+          logical: drag.start.logical,
+        },
+        { time: point.time, price: point.price, logical: point.logical },
+        defaultLineWidth,
+        defaultDrawingColor,
+        defaultLineStyle,
+      );
+      setDrawingList([...drawingsRef.current, drawing]);
+      setSelectedId(drawing.id);
+      setDraft(null);
+      setDraftTo(null);
+      setTool("cursor");
+    };
+
+    const onDrawPointerMove = (event: PointerEvent) => {
+      const drag = drawDragRef.current;
+      if (!drag || toolRef.current !== drag.tool) return;
+      event.preventDefault();
+      const point = eventToPoint(event);
+      if (!point) return;
+      const priceDistance = Math.abs(point.price - drag.start.price);
+      const logicalDistance = Math.abs(point.logical - drag.start.logical);
+      if (logicalDistance > 0.2 || priceDistance > 0.01) drag.moved = true;
+      setDraftTo({ time: point.time, price: point.price, logical: point.logical });
+    };
+
+    const onDrawPointerEnd = (event: PointerEvent) => {
+      const drag = drawDragRef.current;
+      if (!drag) return;
+      event.preventDefault();
+      finishTwoPointDrag(eventToPoint(event));
+    };
+
+    window.addEventListener("pointermove", onDrawPointerMove);
+    window.addEventListener("pointerup", onDrawPointerEnd);
+    window.addEventListener("pointercancel", onDrawPointerEnd);
+    return () => {
+      window.removeEventListener("pointermove", onDrawPointerMove);
+      window.removeEventListener("pointerup", onDrawPointerEnd);
+      window.removeEventListener("pointercancel", onDrawPointerEnd);
+    };
+  }, [defaultDrawingColor, defaultLineStyle, defaultLineWidth, eventToPoint, setDrawingList]);
+
+  useEffect(() => {
+    if (drawingDragLockedRef.current) return;
+    setChartInteraction(tool === "cursor");
+  }, [setChartInteraction, tool]);
 
   useEffect(() => {
     const el = ref.current;
@@ -395,6 +727,45 @@ export function ChartView({
     });
     seriesRef.current = series;
     series.setData(candles);
+    const hasVolume = indicators.volume && candles.some((candle) => candle.volume != null);
+    series.priceScale().applyOptions({
+      scaleMargins: { top: 0.06, bottom: hasVolume ? 0.24 : 0.08 },
+    });
+
+    for (const ma of MA_LINES) {
+      if (!indicators[ma.key]) continue;
+      const maData = movingAverageData(candles, ma.period);
+      if (maData.length === 0) continue;
+      const maSeries = chart.addSeries(LineSeries, {
+        color: ma.color,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: ma.title,
+      });
+      maSeries.setData(maData);
+    }
+
+    if (hasVolume) {
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        priceScaleId: "volume",
+        priceFormat: { type: "volume" },
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.78, bottom: 0 },
+        borderVisible: false,
+      });
+      volumeSeries.setData(candles.map((candle) => ({
+        time: candle.time,
+        value: candle.volume ?? 0,
+        color: candle.close >= candle.open
+          ? "rgba(16, 185, 129, 0.28)"
+          : "rgba(244, 63, 94, 0.28)",
+      })));
+    }
 
     if (markers.length) {
       const seriesMarkers: SeriesMarker<Time>[] = markers.map((m) => ({
@@ -418,7 +789,22 @@ export function ChartView({
       });
     }
 
-    chart.timeScale().fitContent();
+    const savedRange = visibleRangeRef.current;
+    if (
+      savedRange &&
+      Number.isFinite(savedRange.from) &&
+      Number.isFinite(savedRange.to) &&
+      savedRange.to > savedRange.from
+    ) {
+      const minFrom = -100;
+      const maxTo = candles.length + 100;
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(minFrom, Math.min(savedRange.from, maxTo)),
+        to: Math.max(minFrom, Math.min(savedRange.to, maxTo)),
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     let frame = 0;
     const redrawOverlay = () => {
@@ -436,9 +822,25 @@ export function ChartView({
         setHoveredCandle(null);
       }
     };
+    const visibleLogicalRangeHandler = (range: { from: number; to: number } | null) => {
+      redrawOverlay();
+      if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) {
+        lastVisibleRangeKeyRef.current = "";
+        onVisibleRangeChangeRef.current(null);
+        return;
+      }
+      const next = {
+        from: Number(range.from.toFixed(3)),
+        to: Number(range.to.toFixed(3)),
+      };
+      const key = `${next.from}:${next.to}`;
+      if (key === lastVisibleRangeKeyRef.current) return;
+      lastVisibleRangeKeyRef.current = key;
+      onVisibleRangeChangeRef.current(next);
+    };
 
     chart.subscribeCrosshairMove(crosshairHandler);
-    chart.timeScale().subscribeVisibleLogicalRangeChange(redrawOverlay);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(visibleLogicalRangeHandler);
     queueMicrotask(() => {
       setChartWidth(chart.timeScale().width());
       rerenderOverlay((value) => value + 1);
@@ -455,12 +857,12 @@ export function ChartView({
       if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", onResize);
       chart.unsubscribeCrosshairMove(crosshairHandler);
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redrawOverlay);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(visibleLogicalRangeHandler);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [avgCost, candles, height, markers]);
+  }, [avgCost, candles, height, indicators, markers]);
 
   const anchorToPoint = useCallback((anchor: Point & { logical?: number }): ScreenPoint | null => {
     const chart = chartRef.current;
@@ -496,12 +898,17 @@ export function ChartView({
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some SVG elements cannot capture in older browser engines; window listeners still handle the drag.
+    }
     const point = eventToPoint(event);
     const midpoint = clampIndex(Math.floor(candleTimes.length / 2), candleTimes);
     const fallbackStart: EventPoint | null =
       target.kind !== "move"
         ? null
-        : target.drawing.type === "trendline"
+        : target.drawing.type === "trendline" || target.drawing.type === "fibonacci"
           ? {
             ...target.drawing.from,
             index: nearestTimeIndex(target.drawing.from.time, candleTimes),
@@ -519,9 +926,11 @@ export function ChartView({
               : null;
     const start = target.kind === "move" ? point ?? fallbackStart : null;
     dragRef.current = target.kind === "move" ? { ...target, start } : target;
+    drawingDragLockedRef.current = true;
+    setChartInteraction(false);
     setSelectedId(target.id);
     setTool("cursor");
-  }, [candleTimes, eventToPoint]);
+  }, [candleTimes, eventToPoint, setChartInteraction]);
 
   useEffect(() => {
     const onDragPointerMove = (event: PointerEvent) => {
@@ -532,24 +941,27 @@ export function ChartView({
       if (!point) return;
 
       if (target.kind === "from") {
-        updateDrawing(target.id, {
+        scheduleDragUpdate(target.id, {
           ...target.drawing,
           from: { time: point.time, price: point.price, logical: point.logical },
         });
       } else if (target.kind === "to") {
-        updateDrawing(target.id, {
+        scheduleDragUpdate(target.id, {
           ...target.drawing,
           to: { time: point.time, price: point.price, logical: point.logical },
         });
       } else if (target.start) {
         const dx = point.logical - target.start.logical;
         const dy = point.price - target.start.price;
-        updateDrawing(target.id, shiftDrawing(target.drawing, dx, dy, candleTimes));
+        scheduleDragUpdate(target.id, shiftDrawing(target.drawing, dx, dy, candleTimes));
       }
     };
 
     const onDragEnd = () => {
+      flushPendingDrag();
       dragRef.current = null;
+      drawingDragLockedRef.current = false;
+      setChartInteraction(toolRef.current === "cursor");
     };
 
     window.addEventListener("pointermove", onDragPointerMove);
@@ -559,25 +971,59 @@ export function ChartView({
       window.removeEventListener("pointermove", onDragPointerMove);
       window.removeEventListener("pointerup", onDragEnd);
       window.removeEventListener("pointercancel", onDragEnd);
+      if (dragFrameRef.current != null) {
+        window.cancelAnimationFrame(dragFrameRef.current);
+        dragFrameRef.current = null;
+      }
+      pendingDragRef.current = null;
+      liveDragRef.current = null;
     };
-  }, [candleTimes, eventToPoint, updateDrawing]);
+  }, [candleTimes, eventToPoint, flushPendingDrag, scheduleDragUpdate, setChartInteraction]);
 
   return (
     <div className="relative" style={{ width: "100%", height }}>
       <div className="absolute right-2 top-2 z-30 flex items-center gap-1 rounded-md border border-slate-800 bg-slate-950/80 p-1 shadow-sm backdrop-blur">
-        <ToolButton active={tool === "cursor"} title="เลือก/เลื่อนกราฟ" onClick={() => { setTool("cursor"); setDraft(null); }}>
+        <ToolButton active={tool === "cursor"} title="เลือก/เลื่อนกราฟ" onClick={() => {
+          drawDragRef.current = null;
+          setTool("cursor");
+          setDraft(null);
+          setDraftTo(null);
+        }}>
           <MousePointer2 className="h-4 w-4" aria-hidden />
         </ToolButton>
-        <ToolButton active={tool === "trendline"} title="Trendline" onClick={() => { setTool("trendline"); setDraft(null); }}>
+        <ToolButton active={tool === "trendline"} title="Trendline" onClick={() => {
+          drawDragRef.current = null;
+          setTool("trendline");
+          setDraft(null);
+          setDraftTo(null);
+        }}>
           <TrendingUp className="h-4 w-4" aria-hidden />
         </ToolButton>
-        <ToolButton active={tool === "horizontal"} title="Horizontal line" onClick={() => { setTool("horizontal"); setDraft(null); }}>
+        <ToolButton active={tool === "fibonacci"} title="Fibonacci Retracement" onClick={() => {
+          drawDragRef.current = null;
+          setTool("fibonacci");
+          setDraft(null);
+          setDraftTo(null);
+        }}>
+          <span className="text-[10px] font-bold leading-none">Fib</span>
+        </ToolButton>
+        <ToolButton active={tool === "horizontal"} title="Horizontal line" onClick={() => {
+          drawDragRef.current = null;
+          setTool("horizontal");
+          setDraft(null);
+          setDraftTo(null);
+        }}>
           <Minus className="h-4 w-4" aria-hidden />
         </ToolButton>
-        <ToolButton active={tool === "vertical"} title="Vertical line" onClick={() => { setTool("vertical"); setDraft(null); }}>
+        <ToolButton active={tool === "vertical"} title="Vertical line" onClick={() => {
+          drawDragRef.current = null;
+          setTool("vertical");
+          setDraft(null);
+          setDraftTo(null);
+        }}>
           <GripVertical className="h-4 w-4" aria-hidden />
         </ToolButton>
-        {selectedDrawing ? (
+        {selectedDrawing || tool !== "cursor" ? (
           <>
             <div className="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900/80 px-1">
               {COLOR_SWATCHES.map((color) => (
@@ -606,6 +1052,19 @@ export function ChartView({
                 <option key={style.value} value={style.value}>{style.label}</option>
               ))}
             </select>
+            {selectedDrawing?.type === "trendline" ? (
+              <select
+                title="โหมดเส้น"
+                aria-label="โหมดเส้น"
+                value={selectedTrendlineMode}
+                onChange={(event) => updateSelectedTrendlineMode(event.target.value as ChartTrendlineMode)}
+                className="h-8 rounded-md border border-slate-800 bg-slate-900 px-2 text-xs font-medium text-slate-200 focus:border-indigo-500 focus:outline-none"
+              >
+                {TRENDLINE_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
+                ))}
+              </select>
+            ) : null}
             <select
               title="ขนาดเส้น"
               aria-label="ขนาดเส้น"
@@ -623,7 +1082,7 @@ export function ChartView({
         <ToolButton title="ลบเส้นที่เลือก" disabled={!selectedId} onClick={deleteSelected}>
           <Trash2 className="h-4 w-4" aria-hidden />
         </ToolButton>
-        <ToolButton title="ล้างเส้นทั้งหมด" disabled={drawings.length === 0 && !draft} onClick={clearDrawings}>
+        <ToolButton title="ล้างเส้นทั้งหมด" disabled={displayDrawings.length === 0 && !draft} onClick={clearDrawings}>
           <Eraser className="h-4 w-4" aria-hidden />
         </ToolButton>
       </div>
@@ -640,6 +1099,9 @@ export function ChartView({
           <span className="ml-2 text-emerald-400">H {displayCandle.high.toFixed(2)}</span>
           <span className="ml-2 text-rose-400">L {displayCandle.low.toFixed(2)}</span>
           <span className="ml-2">C {displayCandle.close.toFixed(2)}</span>
+          {displayCandle.volume != null ? (
+            <span className="ml-2">V {formatCompactVolume(displayCandle.volume)}</span>
+          ) : null}
         </div>
       ) : null}
       <svg
@@ -648,7 +1110,7 @@ export function ChartView({
         height="100%"
         aria-hidden
       >
-        {drawings.map((drawing) => (
+        {displayDrawings.map((drawing) => (
           <DrawingShape
             key={drawing.id}
             drawing={drawing}
@@ -662,11 +1124,19 @@ export function ChartView({
               setSelectedId(drawing.id);
               setTool("cursor");
               setDraft(null);
+              setDraftTo(null);
+              drawDragRef.current = null;
             }}
             onHandlePointerDown={onHandlePointerDown}
           />
         ))}
-        {draft ? <DraftAnchor anchor={draft} anchorToPoint={anchorToPoint} /> : null}
+        {draft ? (
+          <DraftShape
+            from={draft}
+            to={draftTo}
+            anchorToPoint={anchorToPoint}
+          />
+        ) : null}
       </svg>
       {tool !== "cursor" ? (
         <div
@@ -741,6 +1211,10 @@ function DrawingShape({
   if (drawing.type === "horizontal") {
     const y = priceToY(drawing.price);
     if (y == null) return null;
+    const anchorX = drawing.time ? timeToX(drawing.time, drawing.logical) : null;
+    const labelX = anchorX == null
+      ? chartWidth / 2
+      : Math.max(44, Math.min(chartWidth - 44, anchorX));
     return (
       <>
         <DrawingLine
@@ -755,14 +1229,23 @@ function DrawingShape({
           onSelect={onSelect}
           common={common}
           onHandlePointerDown={onHandlePointerDown}
-          center={{ x: chartWidth / 2, y }}
+          center={{ x: labelX, y }}
         />
         {selected ? (
           <DrawingLabel
             x={Math.max(42, chartWidth - 8)}
             y={Math.max(14, y - 8)}
-            text={`${drawing.price.toFixed(2)}${drawing.time ? ` · ${formatDrawingDate(drawing.time)}` : ""}`}
+            text={drawing.price.toFixed(2)}
             anchor="end"
+          />
+        ) : null}
+        {drawing.time ? (
+          <DrawingLabel
+            x={labelX}
+            y={chartHeight - 8}
+            text={formatDrawingDate(drawing.time)}
+            anchor="middle"
+            opacity={selected ? 1 : 0.72}
           />
         ) : null}
       </>
@@ -803,15 +1286,122 @@ function DrawingShape({
   const from = anchorToPoint(drawing.from);
   const to = anchorToPoint(drawing.to);
   if (!from || !to) return null;
+
+  if (drawing.type === "fibonacci") {
+    const levels = drawing.levels?.length ? drawing.levels : FIBONACCI_LEVELS;
+    const x1 = Math.min(from.x, to.x);
+    const x2 = Math.max(Math.max(from.x, to.x), chartWidth);
+    const top = Math.min(from.y, to.y) - 10;
+    const bottom = Math.max(from.y, to.y) + 10;
+    const center = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const fibWidth = drawing.width ?? DEFAULT_LINE_WIDTH;
+
+    return (
+      <g>
+        <rect
+          x={x1}
+          y={Math.max(0, top)}
+          width={Math.max(32, x2 - x1)}
+          height={Math.max(18, Math.min(chartHeight, bottom) - Math.max(0, top))}
+          fill="transparent"
+          className="pointer-events-auto cursor-move"
+          onPointerDown={(event) => {
+            onSelect();
+            onHandlePointerDown(event, {
+              id: drawing.id,
+              kind: "move",
+              start: null,
+              drawing,
+            });
+          }}
+        />
+        {levels.map((level) => {
+          const y = from.y + (to.y - from.y) * level;
+          const price = drawing.from.price + (drawing.to.price - drawing.from.price) * level;
+          const percent = `${(level * 100).toFixed(level === 0 || level === 1 ? 0 : 1)}%`;
+          return (
+            <g key={level}>
+              <line
+                x1={x1}
+                y1={y}
+                x2={x2}
+                y2={y}
+                stroke={color}
+                strokeWidth={selected ? fibWidth + 0.5 : fibWidth}
+                strokeDasharray={lineDash(drawing.style)}
+                strokeOpacity={level === 0 || level === 1 ? 0.95 : 0.62}
+                pointerEvents="none"
+                {...common}
+              />
+              <DrawingLabel
+                x={Math.max(56, chartWidth - 8)}
+                y={Math.max(14, Math.min(chartHeight - 8, y - 4))}
+                text={`${percent} ${price.toFixed(2)}`}
+                anchor="end"
+                color={color}
+                opacity={selected ? 1 : 0.78}
+              />
+            </g>
+          );
+        })}
+        <line
+          x1={from.x}
+          y1={from.y}
+          x2={to.x}
+          y2={to.y}
+          stroke={selected ? SELECTED_COLOR : color}
+          strokeWidth={1}
+          strokeDasharray="4 4"
+          pointerEvents="none"
+          {...common}
+        />
+        {selected ? (
+          <>
+            <DragHandle
+              point={from}
+              onPointerDown={(event) => onHandlePointerDown(event, { id: drawing.id, kind: "from", drawing })}
+            />
+            <DragHandle
+              point={to}
+              onPointerDown={(event) => onHandlePointerDown(event, { id: drawing.id, kind: "to", drawing })}
+            />
+            <DragHandle
+              point={center}
+              onPointerDown={(event) => onHandlePointerDown(event, {
+                id: drawing.id,
+                kind: "move",
+                start: null,
+                drawing,
+              })}
+            />
+            <DrawingLabel
+              x={from.x}
+              y={from.y + 20}
+              text={formatDrawingDate(drawing.from.time)}
+              anchor="middle"
+            />
+            <DrawingLabel
+              x={to.x}
+              y={to.y + 20}
+              text={formatDrawingDate(drawing.to.time)}
+              anchor="middle"
+            />
+          </>
+        ) : null}
+      </g>
+    );
+  }
+
+  const displayLine = extendTrendlineToViewport(from, to, chartWidth, chartHeight, drawing.mode);
   const center = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   return (
     <>
       <DrawingLine
         drawing={drawing}
-        x1={from.x}
-        y1={from.y}
-        x2={to.x}
-        y2={to.y}
+        x1={displayLine.from.x}
+        y1={displayLine.from.y}
+        x2={displayLine.to.x}
+        y2={displayLine.to.y}
         color={color}
         width={drawing.width ?? DEFAULT_LINE_WIDTH}
         selected={selected}
@@ -943,11 +1533,15 @@ function DrawingLabel({
   y,
   text,
   anchor,
+  color = SELECTED_COLOR,
+  opacity = 1,
 }: {
   x: number;
   y: number;
   text: string;
   anchor: "start" | "middle" | "end";
+  color?: string;
+  opacity?: number;
 }) {
   return (
     <text
@@ -955,7 +1549,8 @@ function DrawingLabel({
       y={y}
       textAnchor={anchor}
       className="pointer-events-none select-none text-[11px] font-medium"
-      fill={SELECTED_COLOR}
+      fill={color}
+      opacity={opacity}
       stroke="var(--background)"
       strokeWidth={3}
       paintOrder="stroke"
@@ -965,23 +1560,51 @@ function DrawingLabel({
   );
 }
 
-function DraftAnchor({
-  anchor,
+function DraftShape({
+  from,
+  to,
   anchorToPoint,
 }: {
-  anchor: Point & { logical?: number };
-  anchorToPoint: (anchor: Point & { logical?: number }) => ScreenPoint | null;
+  from: DraftPoint;
+  to: DraftPoint | null;
+  anchorToPoint: (anchor: DraftPoint) => ScreenPoint | null;
 }) {
-  const point = anchorToPoint(anchor);
-  if (!point) return null;
+  const start = anchorToPoint(from);
+  if (!start) return null;
+  const end = to ? anchorToPoint(to) : null;
   return (
-    <circle
-      cx={point.x}
-      cy={point.y}
-      r={4}
-      fill={SELECTED_COLOR}
-      stroke="#111827"
-      strokeWidth={2}
-    />
+    <>
+      {end ? (
+        <line
+          x1={start.x}
+          y1={start.y}
+          x2={end.x}
+          y2={end.y}
+          stroke={SELECTED_COLOR}
+          strokeWidth={DEFAULT_LINE_WIDTH}
+          strokeDasharray="6 5"
+          pointerEvents="none"
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : null}
+      <circle
+        cx={start.x}
+        cy={start.y}
+        r={4}
+        fill={SELECTED_COLOR}
+        stroke="#111827"
+        strokeWidth={2}
+      />
+      {end ? (
+        <circle
+          cx={end.x}
+          cy={end.y}
+          r={4}
+          fill={SELECTED_COLOR}
+          stroke="#111827"
+          strokeWidth={2}
+        />
+      ) : null}
+    </>
   );
 }

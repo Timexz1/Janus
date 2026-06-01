@@ -8,6 +8,8 @@ create table public.chart_states (
   timeframe  text not null default 'D'
     check (timeframe in ('D', 'W', 'M')),
   drawings   jsonb not null default '[]'::jsonb,
+  indicators jsonb not null default '{"volume":true,"ma20":true,"ma50":false,"ma200":false}'::jsonb,
+  visible_range jsonb,
   updated_at timestamptz not null default now(),
   primary key (user_id, ticker)
 );

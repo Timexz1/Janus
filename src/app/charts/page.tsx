@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
@@ -19,13 +19,16 @@ import {
   isoToNyDate,
 } from "@/lib/format";
 import {
+  DEFAULT_CHART_INDICATORS,
   getChartState,
   saveChartState,
 } from "@/lib/store/local-store";
 import type {
   ChartDrawing,
+  ChartIndicators,
   ChartPeriod,
   ChartTimeframe,
+  ChartVisibleRange,
 } from "@/lib/store/types";
 
 const PERIODS: Array<{ key: ChartPeriod; months: number }> = [
@@ -69,6 +72,7 @@ function aggregateCandles(candles: Candle[], timeframe: ChartTimeframe): Candle[
     current.low = Math.min(current.low, candle.low);
     current.close = candle.close;
     current.time = candle.time;
+    current.volume = (current.volume ?? 0) + (candle.volume ?? 0);
   }
   return [...grouped.values()];
 }
@@ -112,11 +116,30 @@ function ChartsInner() {
   const [tickerOverride, setTickerOverride] = useState<string | null>(null);
   const [period, setPeriod] = useState<ChartPeriod>("1Y");
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("D");
+  const [indicators, setIndicators] = useState<ChartIndicators>(DEFAULT_CHART_INDICATORS);
+  const [visibleRange, setVisibleRange] = useState<ChartVisibleRange | null>(null);
   const [drawings, setDrawings] = useState<ChartDrawing[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadedTickerRef = useRef<string | null>(null);
+  const chartStateRef = useRef<{
+    ticker: string;
+    period: ChartPeriod;
+    timeframe: ChartTimeframe;
+    indicators: ChartIndicators;
+    visibleRange: ChartVisibleRange | null;
+    drawings: ChartDrawing[];
+    ready: boolean;
+  }>({
+    ticker: "",
+    period: "1Y",
+    timeframe: "D",
+    indicators: DEFAULT_CHART_INDICATORS,
+    visibleRange: null,
+    drawings: [],
+    ready: false,
+  });
 
   const ticker = tickerOverride ?? urlTicker?.toUpperCase() ?? tickers[0] ?? "";
 
@@ -131,15 +154,41 @@ function ChartsInner() {
       const saved = getChartState(ticker);
       setPeriod(saved?.period ?? "1Y");
       setTimeframe(saved?.timeframe ?? "D");
+      setIndicators(saved?.indicators ?? DEFAULT_CHART_INDICATORS);
+      setVisibleRange(saved?.visibleRange ?? null);
       setDrawings(saved?.drawings ?? []);
       loadedTickerRef.current = ticker;
     });
   }, [hydrated, ticker]);
 
   useEffect(() => {
-    if (!hydrated || !ticker || loadedTickerRef.current !== ticker) return;
-    saveChartState(ticker, { period, timeframe, drawings });
-  }, [drawings, hydrated, period, ticker, timeframe]);
+    const ready = hydrated && Boolean(ticker) && loadedTickerRef.current === ticker;
+    chartStateRef.current = { ticker, period, timeframe, indicators, visibleRange, drawings, ready };
+    if (!ready) return;
+    const timer = window.setTimeout(() => {
+      saveChartState(ticker, { period, timeframe, indicators, visibleRange, drawings });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [drawings, hydrated, indicators, period, ticker, timeframe, visibleRange]);
+
+  useEffect(() => {
+    const flushChartState = () => {
+      const state = chartStateRef.current;
+      if (!state.ready) return;
+      saveChartState(state.ticker, {
+        period: state.period,
+        timeframe: state.timeframe,
+        indicators: state.indicators,
+        visibleRange: state.visibleRange,
+        drawings: state.drawings,
+      });
+    };
+    window.addEventListener("pagehide", flushChartState);
+    return () => {
+      flushChartState();
+      window.removeEventListener("pagehide", flushChartState);
+    };
+  }, []);
 
   useEffect(() => {
     if (!ticker) {
@@ -241,6 +290,9 @@ function ChartsInner() {
     marketValue != null && costValue != null ? marketValue - costValue : null;
   const unrealizedPct =
     unrealized != null && costValue ? (unrealized / costValue) * 100 : null;
+  const handleVisibleRangeChange = useCallback((range: ChartVisibleRange | null) => {
+    setVisibleRange(range);
+  }, [setVisibleRange]);
 
   if (!hydrated) return <Card className="h-64 animate-pulse" />;
 
@@ -273,7 +325,10 @@ function ChartsInner() {
             <SegmentButton
               key={p.key}
               active={period === p.key}
-              onClick={() => setPeriod(p.key)}
+              onClick={() => {
+                setVisibleRange(null);
+                setPeriod(p.key);
+              }}
             >
               {p.key}
             </SegmentButton>
@@ -284,11 +339,40 @@ function ChartsInner() {
             <SegmentButton
               key={tf.key}
               active={timeframe === tf.key}
-              onClick={() => setTimeframe(tf.key)}
+              onClick={() => {
+                setVisibleRange(null);
+                setTimeframe(tf.key);
+              }}
             >
               {tf.label}
             </SegmentButton>
           ))}
+        </Segmented>
+        <Segmented label="Indicators">
+          <SegmentButton
+            active={indicators.volume}
+            onClick={() => setIndicators((value) => ({ ...value, volume: !value.volume }))}
+          >
+            VOL
+          </SegmentButton>
+          <SegmentButton
+            active={indicators.ma20}
+            onClick={() => setIndicators((value) => ({ ...value, ma20: !value.ma20 }))}
+          >
+            MA20
+          </SegmentButton>
+          <SegmentButton
+            active={indicators.ma50}
+            onClick={() => setIndicators((value) => ({ ...value, ma50: !value.ma50 }))}
+          >
+            MA50
+          </SegmentButton>
+          <SegmentButton
+            active={indicators.ma200}
+            onClick={() => setIndicators((value) => ({ ...value, ma200: !value.ma200 }))}
+          >
+            MA200
+          </SegmentButton>
         </Segmented>
       </div>
 
@@ -368,7 +452,10 @@ function ChartsInner() {
             markers={markers}
             avgCost={avgCost}
             drawings={drawings}
+            indicators={indicators}
+            visibleRange={visibleRange}
             onDrawingsChange={setDrawings}
+            onVisibleRangeChange={handleVisibleRangeChange}
             height={420}
             drawingKey={`${ticker}:${period}:${timeframe}`}
           />

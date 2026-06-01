@@ -104,7 +104,7 @@ export default function TransactionsPage() {
           </div>
 
           <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[840px] text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-400">
                   <th className="px-4 py-3 font-medium">วันเวลา (ไทย)</th>
@@ -115,6 +115,7 @@ export default function TransactionsPage() {
                   <th className="px-4 py-3 text-right font-medium">ราคา</th>
                   <th className="px-4 py-3 text-right font-medium">สุทธิ</th>
                   <th className="px-4 py-3 text-right font-medium">กำไร realized</th>
+                  <th className="px-4 py-3 text-center font-medium">รูป</th>
                   <th className="px-4 py-3 text-right font-medium">จัดการ</th>
                 </tr>
               </thead>
@@ -127,10 +128,7 @@ export default function TransactionsPage() {
                       <td className="px-4 py-3 text-slate-300">{fmtDateTimeBangkok(t.executedAt)}</td>
                       <td className="px-4 py-3 text-slate-400">{broker(t.accountId)}</td>
                       <td className="px-4 py-3 font-medium text-slate-100">
-                        <div className="flex items-center gap-2">
-                          {t.imagePath ? <TxScreenshot path={t.imagePath} /> : null}
-                          <TickerLink ticker={t.ticker} />
-                        </div>
+                        <TickerLink ticker={t.ticker} />
                       </td>
                       <td className="px-4 py-3">
                         <Badge tone={t.side}>{t.side === "buy" ? "ซื้อ" : "ขาย"}</Badge>
@@ -148,6 +146,11 @@ export default function TransactionsPage() {
                         }`}
                       >
                         {gain ? fmtSignedUsd(gain) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center">
+                          {t.imagePath ? <TxScreenshot path={t.imagePath} /> : <span className="text-slate-600">-</span>}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">

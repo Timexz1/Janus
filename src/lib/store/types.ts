@@ -87,6 +87,19 @@ export type IncomeByYear = Record<number, string>; // taxYear → otherIncomeThb
 export type ChartPeriod = "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "ALL";
 export type ChartTimeframe = "D" | "W" | "M";
 export type ChartLineStyle = "solid" | "dashed" | "dotted";
+export type ChartTrendlineMode = "segment" | "ray" | "extended";
+
+export interface ChartIndicators {
+  volume: boolean;
+  ma20: boolean;
+  ma50: boolean;
+  ma200: boolean;
+}
+
+export interface ChartVisibleRange {
+  from: number;
+  to: number;
+}
 
 export interface ChartAnchorPoint {
   time: string;
@@ -100,6 +113,17 @@ export type ChartDrawing =
       type: "trendline";
       from: ChartAnchorPoint;
       to: ChartAnchorPoint;
+      mode?: ChartTrendlineMode;
+      width?: number;
+      color?: string;
+      style?: ChartLineStyle;
+    }
+  | {
+      id: string;
+      type: "fibonacci";
+      from: ChartAnchorPoint;
+      to: ChartAnchorPoint;
+      levels?: number[];
       width?: number;
       color?: string;
       style?: ChartLineStyle;
@@ -128,6 +152,8 @@ export interface ChartState {
   ticker: string;
   period: ChartPeriod;
   timeframe: ChartTimeframe;
+  indicators: ChartIndicators;
+  visibleRange: ChartVisibleRange | null;
   drawings: ChartDrawing[];
   updatedAt: string;
 }

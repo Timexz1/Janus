@@ -10,6 +10,8 @@ import type {
   ChartPeriod,
   ChartTimeframe,
   ChartDrawing,
+  ChartIndicators,
+  ChartVisibleRange,
 } from "./types";
 import {
   DEFAULT_APPORTIONMENT,
@@ -35,6 +37,13 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: "acc_webull", broker: "Webull", accountLabel: "Webull Thailand", currency: "USD" },
   { id: "acc_dime", broker: "Dime", accountLabel: "Dime! USD", currency: "USD" },
 ];
+
+export const DEFAULT_CHART_INDICATORS: ChartIndicators = {
+  volume: true,
+  ma20: true,
+  ma50: false,
+  ma200: false,
+};
 
 // --- Cloud sync hooks ------------------------------------------------------
 // localStorage stays the synchronous cache; when a user is signed in, mutations
@@ -274,7 +283,20 @@ export function setIncomeForYear(year: number, amountThb: string): void {
 // --- Chart state ----------------------------------------------------------
 
 export function getChartStates(): Record<string, ChartState> {
-  return read<Record<string, ChartState>>(CHART_STATES_KEY, {});
+  const states = read<Record<string, ChartState>>(CHART_STATES_KEY, {});
+  return Object.fromEntries(
+    Object.entries(states).map(([key, state]) => [
+      key,
+      {
+        ...state,
+        indicators: {
+          ...DEFAULT_CHART_INDICATORS,
+          ...(state.indicators ?? {}),
+        },
+        visibleRange: state.visibleRange ?? null,
+      },
+    ]),
+  );
 }
 
 export function getChartState(ticker: string): ChartState | null {
@@ -287,6 +309,8 @@ export function saveChartState(
   input: {
     period: ChartPeriod;
     timeframe: ChartTimeframe;
+    indicators?: ChartIndicators;
+    visibleRange?: ChartVisibleRange | null;
     drawings: ChartDrawing[];
   },
 ): void {
@@ -297,6 +321,11 @@ export function saveChartState(
     [key]: {
       ticker: key,
       ...input,
+      indicators: {
+        ...DEFAULT_CHART_INDICATORS,
+        ...(input.indicators ?? {}),
+      },
+      visibleRange: input.visibleRange ?? null,
       updatedAt: new Date().toISOString(),
     },
   });

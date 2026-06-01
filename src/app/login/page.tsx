@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Info } from "lucide-react";
@@ -19,6 +19,13 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Surface errors handed back by /auth/* routes (e.g. ?error=... from the
+  // server login or the recovery callback).
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get("error");
+    if (err) setMsg(err);
+  }, []);
 
   if (!configured) {
     return (
@@ -95,8 +102,10 @@ export default function LoginPage() {
         });
         setMsg(error ? error.message : "สมัครสำเร็จ — ตรวจอีเมลเพื่อยืนยัน");
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(currentEmail);
-        setMsg(error ? error.message : "ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว");
+        const { error } = await supabase.auth.resetPasswordForEmail(currentEmail, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password`,
+        });
+        setMsg(error ? error.message : "ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว — เปิดลิงก์ในอีเมลเพื่อตั้งรหัสใหม่");
       }
     } finally {
       setBusy(false);

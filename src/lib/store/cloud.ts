@@ -8,6 +8,7 @@ import {
   getIncomeByYear,
   getTaxSettings,
   getChartStates,
+  DEFAULT_CHART_INDICATORS,
   setCloudMirror,
   loadSnapshot,
   clearLocalData,
@@ -22,6 +23,8 @@ import type {
   TaxSettings,
   ChartState,
   ChartDrawing,
+  ChartIndicators,
+  ChartVisibleRange,
 } from "./types";
 
 /**
@@ -101,18 +104,41 @@ const tsFromDb = (r: Row): Partial<TaxSettings> => ({
   claudeModel: r.claude_model as string,
 });
 
-const chartStateToDb = (s: ChartState, uid: string): Row => ({
+const chartStateToDb = (
+  s: ChartState,
+  uid: string,
+  columns: { indicators: boolean; visibleRange: boolean } = {
+    indicators: true,
+    visibleRange: true,
+  },
+): Row => ({
   user_id: uid,
   ticker: s.ticker,
   period: s.period,
   timeframe: s.timeframe,
   drawings: s.drawings,
+  ...(columns.indicators
+    ? { indicators: { ...DEFAULT_CHART_INDICATORS, ...(s.indicators ?? {}) } }
+    : {}),
+  ...(columns.visibleRange ? { visible_range: s.visibleRange ?? null } : {}),
   updated_at: s.updatedAt,
 });
 const chartStateFromDb = (r: Row): ChartState => ({
   ticker: r.ticker as string,
   period: (r.period as ChartState["period"]) ?? "1Y",
   timeframe: (r.timeframe as ChartState["timeframe"]) ?? "D",
+  indicators: {
+    ...DEFAULT_CHART_INDICATORS,
+    ...(
+      r.indicators && typeof r.indicators === "object" && !Array.isArray(r.indicators)
+        ? (r.indicators as Partial<ChartIndicators>)
+        : {}
+    ),
+  },
+  visibleRange:
+    r.visible_range && typeof r.visible_range === "object" && !Array.isArray(r.visible_range)
+      ? (r.visible_range as ChartVisibleRange)
+      : null,
   drawings: Array.isArray(r.drawings) ? (r.drawings as ChartDrawing[]) : [],
   updatedAt: (r.updated_at as string) ?? new Date().toISOString(),
 });
@@ -207,7 +233,24 @@ async function mirrorNow(sb: SupabaseClient, uid: string, table: CloudTable) {
   } else if (table === "chart_states") {
     const states = getChartStates();
     const rows = Object.values(states).map((s) => chartStateToDb(s, uid));
-    if (rows.length) await run(sb.from("chart_states").upsert(rows, { onConflict: "user_id,ticker" }));
+    if (rows.length) {
+      try {
+        await run(sb.from("chart_states").upsert(rows, { onConflict: "user_id,ticker" }));
+      } catch (e) {
+        const message =
+          e && typeof e === "object" && "message" in e
+            ? String((e as { message?: unknown }).message)
+            : String(e);
+        const lowerMessage = message.toLowerCase();
+        if (!lowerMessage.includes("indicators") && !lowerMessage.includes("visible_range")) {
+          throw e;
+        }
+        const fallbackRows = Object.values(states).map((s) =>
+          chartStateToDb(s, uid, { indicators: false, visibleRange: false }),
+        );
+        await run(sb.from("chart_states").upsert(fallbackRows, { onConflict: "user_id,ticker" }));
+      }
+    }
   }
 }
 

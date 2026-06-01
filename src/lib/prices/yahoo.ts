@@ -27,6 +27,7 @@ export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<C
             high?: (number | null)[];
             low?: (number | null)[];
             close?: (number | null)[];
+            volume?: (number | null)[];
           }[];
         };
       }[];
@@ -45,9 +46,17 @@ export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<C
     const high = q.high?.[i];
     const low = q.low?.[i];
     const close = q.close?.[i];
+    const volume = q.volume?.[i];
     if ([open, high, low, close].some((n) => n == null || !Number.isFinite(n))) continue;
     const time = new Date(ts[i] * 1000).toISOString().slice(0, 10);
-    byDate.set(time, { time, open: open!, high: high!, low: low!, close: close! });
+    byDate.set(time, {
+      time,
+      open: open!,
+      high: high!,
+      low: low!,
+      close: close!,
+      volume: volume != null && Number.isFinite(volume) ? volume : undefined,
+    });
   }
   return [...byDate.values()];
 }

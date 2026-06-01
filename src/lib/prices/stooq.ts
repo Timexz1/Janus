@@ -22,13 +22,21 @@ export async function fetchDailyCandles(ticker: string): Promise<Candle[]> {
 
   const candles: Candle[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const [date, o, h, l, c] = lines[i].split(",");
+    const [date, o, h, l, c, v] = lines[i].split(",");
     const open = Number(o);
     const high = Number(h);
     const low = Number(l);
     const close = Number(c);
+    const volume = Number(v);
     if (!date || [open, high, low, close].some((n) => !Number.isFinite(n))) continue;
-    candles.push({ time: date, open, high, low, close });
+    candles.push({
+      time: date,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(volume) ? volume : undefined,
+    });
   }
   return candles;
 }
