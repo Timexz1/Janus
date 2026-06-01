@@ -287,13 +287,14 @@ export default function DashboardPage() {
           <ul className="divide-y divide-slate-800/70">
             {recent.map((tx) => {
               const n = normalizeStored(tx);
-              const px = prices[tx.ticker];
-              const hasPx = px != null && Number.isFinite(px);
-              const txPrice = parseFloat(tx.price);
-              // Only show % for sell transactions: (sellPrice − currentPrice) / sellPrice
-              // positive = ขายได้ราคาดีกว่าตลาดตอนนี้, negative = ราคาขึ้นหลังขาย
-              const displayPct = tx.side === "sell" && hasPx && txPrice > 0
-                ? ((txPrice - px!) / txPrice) * 100
+              // Realized P/L % for sell transactions only (FIFO cost basis)
+              // plPct = realizedGain / costBasis = realizedGain / (net − realizedGain)
+              const realizedGain = tx.side === "sell" ? portfolio.realizedByTxId.get(tx.id) : undefined;
+              const displayPct = realizedGain != null
+                ? (() => {
+                    const costBasis = n.net.minus(realizedGain);
+                    return costBasis.isZero() ? null : realizedGain.div(costBasis).times(100).toNumber();
+                  })()
                 : null;
               return (
                 <li key={tx.id} className="flex items-center gap-3 py-2.5">
