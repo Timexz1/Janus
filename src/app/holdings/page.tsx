@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { Card, EmptyState, StatCard } from "@/components/ui";
 import { StockLogo } from "@/components/stock-logo";
@@ -157,9 +157,8 @@ export default function HoldingsPage() {
                     : null;
 
                 return (
-                  <>
+                  <Fragment key={key}>
                     <tr
-                      key={key}
                       className="cursor-pointer hover:bg-slate-800/40"
                       onClick={() => toggleRow(key)}
                     >
@@ -308,7 +307,7 @@ export default function HoldingsPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
