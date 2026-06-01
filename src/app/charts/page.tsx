@@ -281,6 +281,7 @@ function ChartsInner() {
 
   const lastCandleClose = candles.length ? candles[candles.length - 1].close : null;
   const liveQuote = ticker ? quotes[ticker] : undefined;
+  const quoteSource = liveQuote?.source;
   const lastClose = ticker ? (prices[ticker] ?? lastCandleClose) : lastCandleClose;
   const prevClose = liveQuote?.previousClose ?? (candles.length > 1 ? candles[candles.length - 2].close : null);
   const changePct =
@@ -389,8 +390,10 @@ function ChartsInner() {
             changePct != null
               ? `${changePct >= 0 ? "▲" : "▼"} ${Math.abs(changePct).toFixed(2)}% เทียบปิดก่อนหน้า`
               : liveQuote?.asOf
-                ? `Yahoo live - ${fmtDateTimeBangkok(liveQuote.asOf)}`
-                : "Yahoo"
+                ? `${quoteSource?.startsWith("alpaca-") ? "Alpaca stream" : "Yahoo live"} - ${fmtDateTimeBangkok(liveQuote.asOf)}`
+                : quoteSource?.startsWith("alpaca-")
+                  ? "Alpaca stream"
+                  : "Yahoo"
           }
           tone={changePct == null ? "default" : changePct >= 0 ? "positive" : "negative"}
         />

@@ -11,8 +11,14 @@ export interface Candle {
 export interface QuoteSnapshot {
   ticker: string;
   price: number;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  bidSize: number | null;
+  askSize: number | null;
   previousClose: number | null;
   currency: string | null;
   marketState: string | null;
   asOf: string | null;
+  source: string;
 }

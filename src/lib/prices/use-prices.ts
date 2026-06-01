@@ -1,26 +1,64 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getSecret, subscribeVault } from "@/lib/store/secret-vault";
+import { applyAlpacaStreamMessage, type AlpacaStreamMessage } from "./alpaca";
 import type { QuoteSnapshot } from "./types";
 
 const PRICE_REFRESH_MS = 30_000;
+const ALPACA_STREAM_FEED = (process.env.NEXT_PUBLIC_ALPACA_STREAM_FEED ?? "iex").trim().toLowerCase();
 
-/** Live Yahoo quote price keyed by ticker, refreshed periodically from /api/prices. */
+function quoteMapToPrices(quotes: Record<string, QuoteSnapshot>) {
+  return Object.fromEntries(
+    Object.values(quotes)
+      .filter((quote) => Number.isFinite(quote.price))
+      .map((quote) => [quote.ticker, quote.price]),
+  );
+}
+
+function readAlpacaCredentials() {
+  return {
+    key: getSecret("alpaca_key"),
+    secret: getSecret("alpaca_secret"),
+  };
+}
+
+function mergeFallbackQuote(current: QuoteSnapshot | undefined, fallback: QuoteSnapshot): QuoteSnapshot {
+  if (!current) return fallback;
+  const isStreaming = current.source.startsWith("alpaca-");
+  if (!isStreaming) return fallback;
+
+  return {
+    ...fallback,
+    price: current.price,
+    last: current.last,
+    bid: current.bid,
+    ask: current.ask,
+    bidSize: current.bidSize,
+    askSize: current.askSize,
+    marketState: current.marketState,
+    asOf: current.asOf,
+    source: current.source,
+  };
+}
+
+/** Snapshot fallback + Alpaca WebSocket streaming quotes keyed by ticker. */
 export function useLastPrices(tickers: string[]): {
   prices: Record<string, number>;
   quotes: Record<string, QuoteSnapshot>;
   loading: boolean;
 } {
-  const [prices, setPrices] = useState<Record<string, number>>({});
   const [quotes, setQuotes] = useState<Record<string, QuoteSnapshot>>({});
   const [loading, setLoading] = useState(false);
+  const [vaultVersion, setVaultVersion] = useState(0);
   const key = [...new Set(tickers)].sort().join(",");
+
+  useEffect(() => subscribeVault(() => setVaultVersion((value) => value + 1)), []);
 
   useEffect(() => {
     const list = key ? key.split(",") : [];
     if (list.length === 0) {
       queueMicrotask(() => {
-        setPrices({});
         setQuotes({});
         setLoading(false);
       });
@@ -50,10 +88,10 @@ export function useLastPrices(tickers: string[]): {
             .filter((quote) => quote && Number.isFinite(quote.price))
             .map((quote) => [quote.ticker, quote]),
         );
-        setQuotes(nextQuotes);
-        setPrices(
+
+        setQuotes((current) =>
           Object.fromEntries(
-            Object.values(nextQuotes).map((quote) => [quote.ticker, quote.price]),
+            Object.entries(nextQuotes).map(([ticker, fallback]) => [ticker, mergeFallbackQuote(current[ticker], fallback)]),
           ),
         );
       } catch (error) {
@@ -89,5 +127,61 @@ export function useLastPrices(tickers: string[]): {
     };
   }, [key]);
 
+  useEffect(() => {
+    const list = key ? key.split(",") : [];
+    const { key: alpacaKey, secret } = readAlpacaCredentials();
+    if (list.length === 0 || !alpacaKey || !secret) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let closedByHook = false;
+
+    const connect = () => {
+      ws = new WebSocket(`wss://stream.data.alpaca.markets/v2/${ALPACA_STREAM_FEED}`);
+
+      ws.addEventListener("open", () => {
+        ws?.send(JSON.stringify({ action: "auth", key: alpacaKey, secret }));
+      });
+
+      ws.addEventListener("message", (event) => {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (!Array.isArray(payload)) return;
+
+        const messages = payload as Array<Record<string, unknown>>;
+        for (const message of messages) {
+          if (message.T === "success" && message.msg === "authenticated") {
+            ws?.send(JSON.stringify({ action: "subscribe", trades: list, quotes: list }));
+            continue;
+          }
+          if (message.T !== "t" && message.T !== "q") continue;
+          const streamMessage = message as unknown as AlpacaStreamMessage;
+          setQuotes((current) => ({
+            ...current,
+            [streamMessage.S]: applyAlpacaStreamMessage(current[streamMessage.S], streamMessage, ALPACA_STREAM_FEED),
+          }));
+        }
+      });
+
+      ws.addEventListener("close", () => {
+        if (closedByHook) return;
+        reconnectTimer = window.setTimeout(connect, 3_000);
+      });
+    };
+
+    connect();
+
+    return () => {
+      closedByHook = true;
+      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [key, vaultVersion]);
+
+  const prices = useMemo(() => quoteMapToPrices(quotes), [quotes]);
   return { prices, quotes, loading };
 }
