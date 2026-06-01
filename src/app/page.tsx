@@ -129,7 +129,7 @@ export default function DashboardPage() {
   if (transactions.length === 0) {
     return (
       <div className="space-y-5">
-        <PageHeader />
+        <PageHeader brokerFilter={brokerFilter} onBrokerFilterChange={setBrokerFilter} />
         <EmptyState
           title="ยังไม่มีรายการเทรด"
           description="เริ่มต้นด้วยการเพิ่มรายการจาก screenshot ของ Webull / Dime หรือโหลดข้อมูลตัวอย่าง"
@@ -162,17 +162,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader />
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-slate-400">Account view</span>
-        <div className="w-full sm:w-56">
-          <Select value={brokerFilter} onChange={(e) => setBrokerFilter(e.target.value)} aria-label="Filter dashboard by broker">
-            <option value="all">Webull + Dime</option>
-            <option value="webull">Webull only</option>
-            <option value="dime">Dime only</option>
-          </Select>
-        </div>
-      </div>
+      <PageHeader brokerFilter={brokerFilter} onBrokerFilterChange={setBrokerFilter} />
 
       {/* ─── Portfolio hero banner ────────────────────────────────── */}
       {filteredTransactions.length === 0 ? (
@@ -250,12 +240,7 @@ export default function DashboardPage() {
           tone={gainTone(portfolio.totalRealizedGain)}
           hint="FIFO ทุกรายการ"
         />
-        <StatCard
-          label="XIRR (ต่อปี)"
-          value={metrics.xirrText}
-          tone={metrics.xirrPct != null ? (metrics.xirrPct > 0 ? "positive" : metrics.xirrPct < 0 ? "negative" : "default") : "default"}
-          hint="IRR รวม unrealized"
-        />
+
         <StatCard
           label="ภาษีประมาณ (ปีนี้)"
           value={fmtThb(taxTotal)}
@@ -418,17 +403,35 @@ export default function DashboardPage() {
   );
 }
 
-function PageHeader() {
+function PageHeader({
+  brokerFilter,
+  onBrokerFilterChange,
+}: {
+  brokerFilter?: string;
+  onBrokerFilterChange?: (value: string) => void;
+}) {
   const { t } = useT();
   return (
-    <header className="flex items-end justify-between gap-2">
+    <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <h1 className="text-lg font-semibold text-slate-100">{t("dashboard.title")}</h1>
         <p className="mt-1 text-sm text-slate-500">{t("dashboard.subtitle")}</p>
       </div>
-      <Link href="/transactions/new" className="shrink-0">
-        <Button><Plus className="h-4 w-4" aria-hidden /> {t("nav.add")}</Button>
-      </Link>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        {brokerFilter && onBrokerFilterChange && (
+          <div className="w-full sm:w-56">
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Account view</p>
+            <Select value={brokerFilter} onChange={(e) => onBrokerFilterChange(e.target.value)} aria-label="Filter dashboard by broker">
+              <option value="all">Webull + Dime</option>
+              <option value="webull">Webull only</option>
+              <option value="dime">Dime only</option>
+            </Select>
+          </div>
+        )}
+        <Link href="/transactions/new" className="shrink-0">
+          <Button><Plus className="h-4 w-4" aria-hidden /> {t("nav.add")}</Button>
+        </Link>
+      </div>
     </header>
   );
 }
