@@ -11,7 +11,7 @@ import { replaceAllTransactions } from "@/lib/store/local-store";
 const SAMPLE: StoredTransaction[] = [
   {
     id: "tx_sample_asts_buy",
-    accountId: "acc_webull",
+    brokerId: "webull",
     ticker: "ASTS",
     exchange: "NASDAQ",
     side: "buy",
@@ -29,7 +29,7 @@ const SAMPLE: StoredTransaction[] = [
   },
   {
     id: "tx_sample_asts_sell",
-    accountId: "acc_webull",
+    brokerId: "webull",
     ticker: "ASTS",
     exchange: "NASDAQ",
     side: "sell",
@@ -47,7 +47,7 @@ const SAMPLE: StoredTransaction[] = [
   },
   {
     id: "tx_sample_rdw_buy",
-    accountId: "acc_dime",
+    brokerId: "dime",
     ticker: "RDW",
     exchange: "NYSE",
     side: "buy",

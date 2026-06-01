@@ -13,7 +13,7 @@ import { uploadScreenshot } from "@/lib/store/screenshots";
 import { getSecret, subscribeVault } from "@/lib/store/secret-vault";
 import { useStore } from "@/lib/store/hooks";
 import { CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL } from "@/lib/ocr/pricing";
-import type { Account, OcrProvider, StoredTransaction } from "@/lib/store/types";
+import type { OcrProvider, StoredTransaction } from "@/lib/store/types";
 import type { ParsedTrade } from "@/lib/ocr/parser";
 import { tradeKey } from "@/lib/import/dedupe";
 import { isoToLocalInput, localInputToIso, fmtUsd } from "@/lib/format";
@@ -32,7 +32,7 @@ type RowStatus = "manual" | "pending" | "processing" | "done" | "error";
 type EditableField = keyof RowFields;
 
 interface RowFields {
-  accountId: string;
+  brokerId: string;
   side: "buy" | "sell";
   ticker: string;
   exchange: "NYSE" | "NASDAQ" | "OTHER";
@@ -59,7 +59,7 @@ interface ImportRow {
 
 function rowKey(r: ImportRow): string {
   return tradeKey({
-    accountId: r.fields.accountId,
+    brokerId: r.fields.brokerId,
     ticker: r.fields.ticker,
     side: r.fields.side,
     qty: r.fields.qty,
@@ -80,7 +80,7 @@ function executedAtKeyFromLocal(local: string): string {
 
 function storedTransactionKey(t: StoredTransaction): string {
   return tradeKey({
-    accountId: t.accountId,
+    brokerId: t.brokerId,
     ticker: t.ticker,
     side: t.side,
     qty: t.qty,
@@ -102,7 +102,7 @@ function isOpt(v: string) {
 
 function emptyFields(): RowFields {
   return {
-    accountId: "acc_webull",
+    brokerId: "webull",
     side: "buy",
     ticker: "",
     exchange: "NASDAQ",
@@ -133,7 +133,7 @@ function netFeeStr(fees: string | null | undefined, coupon: string | null | unde
 
 function fieldsFromParsed(p: ParsedTrade): RowFields {
   return {
-    accountId: p.accountId ?? "acc_webull",
+    brokerId: p.brokerId ?? "webull",
     side: p.side ?? "buy",
     ticker: p.ticker ?? "",
     exchange: p.exchange ?? "OTHER",
@@ -241,7 +241,7 @@ function duplicateMessagesForRows(
 function toStored(f: RowFields, id: string): StoredTransaction {
   return {
     id,
-    accountId: f.accountId,
+    brokerId: f.brokerId,
     ticker: f.ticker.toUpperCase(),
     exchange: f.exchange,
     side: f.side,
@@ -261,7 +261,7 @@ function toStored(f: RowFields, id: string): StoredTransaction {
   };
 }
 
-export function ImportTable({ accounts }: { accounts: Account[] }) {
+export function ImportTable() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -446,13 +446,12 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
 
     // 2) holistic FIFO check (existing + this batch) so no oversell slips in
     const candidates = validated.map((r) => toStored(r.fields, r.id));
-    const portfolio = buildPortfolio(accounts, [...existing, ...candidates]);
+    const portfolio = buildPortfolio([...existing, ...candidates]);
     if (portfolio.errors.length) {
-      const broker = (id: string) => accounts.find((a) => a.id === id)?.broker ?? id;
       setBatchError(
         "บันทึกไม่ได้: " +
           portfolio.errors
-            .map((e) => `${broker(e.accountId)} ${e.ticker} — ${e.message}`)
+            .map((e) => `${e.brokerId} ${e.ticker} — ${e.message}`)
             .join(" · "),
       );
       return;
@@ -689,13 +688,12 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
                     <Select
                       className="w-44 py-1"
                       data-row-id={r.id}
-                      data-field="accountId"
-                      value={r.fields.accountId}
-                      onChange={(e) => patchField(r.id, "accountId", e.target.value)}
+                      data-field="brokerId"
+                      value={r.fields.brokerId}
+                      onChange={(e) => patchField(r.id, "brokerId", e.target.value)}
                     >
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>{a.broker}</option>
-                      ))}
+                      <option value="webull">Webull Thailand</option>
+                      <option value="dime">Dime! USD</option>
                     </Select>
                   </td>
                   <td className="px-2 py-2">

@@ -11,13 +11,13 @@ import { Decimal, ZERO } from "@/lib/money/decimal";
 import { fmtUsd, fmtSignedUsd, fmtQty, fmtPrice, gainTone } from "@/lib/format";
 
 export default function HoldingsPage() {
-  const { accounts, transactions, hydrated } = useStore();
+  const { transactions, hydrated } = useStore();
   const portfolio = useMemo(
-    () => buildPortfolio(accounts, transactions),
-    [accounts, transactions],
+    () => buildPortfolio(transactions),
+    [transactions],
   );
   const { t } = useT();
-  const broker = (id: string) => accounts.find((a) => a.id === id)?.broker ?? id;
+  const BROKER_LABELS: Record<string, string> = { webull: "Webull Thailand", dime: "Dime! USD" };
   const { prices } = useLastPrices(portfolio.holdings.map((h) => h.ticker));
 
   const totals = useMemo(() => {
@@ -76,11 +76,11 @@ export default function HoldingsPage() {
                 const mv = hasPx ? h.qty.times(px) : null;
                 const upl = mv ? mv.minus(h.costValue) : null;
                 return (
-                  <tr key={`${h.accountId}-${h.ticker}`} className="hover:bg-slate-800/30">
+                  <tr key={`${h.brokerId}-${h.ticker}`} className="hover:bg-slate-800/30">
                     <td className="px-4 py-3 font-medium text-slate-100">
                       <TickerLink ticker={h.ticker} />
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{broker(h.accountId)}</td>
+                    <td className="px-4 py-3 text-slate-400">{BROKER_LABELS[h.brokerId] ?? h.brokerId}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-200">{fmtQty(h.qty)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-200">{fmtPrice(h.avgCost)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-300">{hasPx ? fmtPrice(px) : "—"}</td>

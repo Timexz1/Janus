@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { tradeKey, dedupe, type TradeKeyFields } from "@/lib/import/dedupe";
 
 const row = (over: Partial<TradeKeyFields> = {}): TradeKeyFields => ({
-  accountId: "acc_dime",
+  brokerId: "dime",
   ticker: "RDW",
   side: "buy",
   qty: "87.75",

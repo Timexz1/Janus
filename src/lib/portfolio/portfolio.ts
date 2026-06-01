@@ -5,7 +5,7 @@ import {
   InsufficientSharesError,
 } from "@/lib/engine/fifo";
 import type { EngineTransaction, NormalizedTrade } from "@/lib/engine/types";
-import type { Account, StoredTransaction } from "@/lib/store/types";
+import type { StoredTransaction } from "@/lib/store/types";
 import type { SaleEvent } from "@/lib/tax/remittance";
 
 /** Normalize a stored transaction (raw fields → canonical shape). */
@@ -33,7 +33,7 @@ function toEngineTx(t: StoredTransaction): EngineTransaction {
 }
 
 export interface Holding {
-  accountId: string;
+  brokerId: string;
   ticker: string;
   qty: Decimal; // open shares
   avgCost: Decimal; // per share
@@ -42,7 +42,7 @@ export interface Holding {
 }
 
 export interface GroupError {
-  accountId: string;
+  brokerId: string;
   ticker: string;
   message: string;
 }
@@ -56,22 +56,21 @@ export interface Portfolio {
   openPositions: number;
 }
 
-function groupKey(accountId: string, ticker: string): string {
-  return `${accountId}__${ticker}`;
+function groupKey(brokerId: string, ticker: string): string {
+  return `${brokerId}__${ticker}`;
 }
 
 /**
- * Build the full portfolio view by replaying transactions per (account, ticker)
+ * Build the full portfolio view by replaying transactions per (broker, ticker)
  * through the FIFO engine. A bad group (e.g. a sell with no matching buy) is
  * captured as an error instead of crashing the whole view.
  */
 export function buildPortfolio(
-  accounts: Account[],
   transactions: StoredTransaction[],
 ): Portfolio {
   const groups = new Map<string, StoredTransaction[]>();
   for (const t of transactions) {
-    const key = groupKey(t.accountId, t.ticker);
+    const key = groupKey(t.brokerId, t.ticker);
     const list = groups.get(key);
     if (list) list.push(t);
     else groups.set(key, [t]);
@@ -84,7 +83,7 @@ export function buildPortfolio(
   let totalRealizedGain = ZERO;
 
   for (const [, txns] of groups) {
-    const { accountId, ticker } = txns[0];
+    const { brokerId, ticker } = txns[0];
     try {
       const result = replayTransactions(txns.map(toEngineTx));
 
@@ -102,7 +101,7 @@ export function buildPortfolio(
 
       if (qty.gt(0)) {
         holdings.push({
-          accountId,
+          brokerId,
           ticker,
           qty,
           avgCost: costValue.div(qty),
@@ -119,7 +118,7 @@ export function buildPortfolio(
           : err instanceof Error
             ? err.message
             : "เกิดข้อผิดพลาดในการคำนวณ";
-      errors.push({ accountId, ticker, message });
+      errors.push({ brokerId, ticker, message });
     }
   }
 
@@ -145,7 +144,7 @@ export function extractSaleEvents(
   const byId = new Map(transactions.map((t) => [t.id, t]));
   const groups = new Map<string, StoredTransaction[]>();
   for (const t of transactions) {
-    const key = groupKey(t.accountId, t.ticker);
+    const key = groupKey(t.brokerId, t.ticker);
     const list = groups.get(key);
     if (list) list.push(t);
     else groups.set(key, [t]);
@@ -173,14 +172,14 @@ export function extractSaleEvents(
   return events;
 }
 
-/** Available open shares for one account+ticker (used to validate sells). */
+/** Available open shares for one broker+ticker (used to validate sells). */
 export function availableShares(
   transactions: StoredTransaction[],
-  accountId: string,
+  brokerId: string,
   ticker: string,
 ): Decimal {
   const txns = transactions.filter(
-    (t) => t.accountId === accountId && t.ticker === ticker,
+    (t) => t.brokerId === brokerId && t.ticker === ticker,
   );
   if (txns.length === 0) return ZERO;
   try {

@@ -14,16 +14,17 @@ import { TickerLink } from "@/components/ticker-link";
 import { fmtUsd, fmtSignedUsd, fmtQty, fmtPrice, fmtDateTimeBangkok, gainTone } from "@/lib/format";
 
 export default function TransactionsPage() {
-  const { accounts, transactions, hydrated } = useStore();
+  const { transactions, hydrated } = useStore();
   const { t } = useT();
-  const [accountFilter, setAccountFilter] = useState("all");
+  const [brokerFilter, setBrokerFilter] = useState("all");
   const [tickerFilter, setTickerFilter] = useState("all");
 
+  const BROKER_LABELS: Record<string, string> = { webull: "Webull Thailand", dime: "Dime! USD" };
+
   const portfolio = useMemo(
-    () => buildPortfolio(accounts, transactions),
-    [accounts, transactions],
+    () => buildPortfolio(transactions),
+    [transactions],
   );
-  const broker = (id: string) => accounts.find((a) => a.id === id)?.broker ?? id;
 
   const tickers = useMemo(
     () => Array.from(new Set(transactions.map((t) => t.ticker))).sort(),
@@ -32,10 +33,10 @@ export default function TransactionsPage() {
 
   const rows = useMemo(() => {
     return [...transactions]
-      .filter((t) => accountFilter === "all" || t.accountId === accountFilter)
+      .filter((t) => brokerFilter === "all" || t.brokerId === brokerFilter)
       .filter((t) => tickerFilter === "all" || t.ticker === tickerFilter)
       .sort((a, b) => (a.executedAt < b.executedAt ? 1 : -1));
-  }, [transactions, accountFilter, tickerFilter]);
+  }, [transactions, brokerFilter, tickerFilter]);
 
   if (!hydrated) return <Card className="h-48 animate-pulse" />;
 
@@ -82,13 +83,10 @@ export default function TransactionsPage() {
         <>
           <div className="flex flex-wrap gap-3">
             <div className="w-44">
-              <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
-                <option value="all">ทุกบัญชี</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.broker}
-                  </option>
-                ))}
+              <Select value={brokerFilter} onChange={(e) => setBrokerFilter(e.target.value)}>
+                <option value="all">ทุกโบรกเกอร์</option>
+                <option value="webull">Webull Thailand</option>
+                <option value="dime">Dime! USD</option>
               </Select>
             </div>
             <div className="w-44">
@@ -126,7 +124,7 @@ export default function TransactionsPage() {
                   return (
                     <tr key={t.id} className="hover:bg-slate-800/30">
                       <td className="px-4 py-3 text-slate-300">{fmtDateTimeBangkok(t.executedAt)}</td>
-                      <td className="px-4 py-3 text-slate-400">{broker(t.accountId)}</td>
+                      <td className="px-4 py-3 text-slate-400">{BROKER_LABELS[t.brokerId] ?? t.brokerId}</td>
                       <td className="px-4 py-3 font-medium text-slate-100">
                         <TickerLink ticker={t.ticker} />
                       </td>

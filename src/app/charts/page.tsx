@@ -103,10 +103,10 @@ function filterByPeriod(candles: Candle[], period: ChartPeriod) {
 
 function ChartsInner() {
   const urlTicker = useSearchParams().get("ticker");
-  const { accounts, transactions, hydrated } = useStore();
+  const { transactions, hydrated } = useStore();
   const portfolio = useMemo(
-    () => buildPortfolio(accounts, transactions),
-    [accounts, transactions],
+    () => buildPortfolio(transactions),
+    [transactions],
   );
 
   const tickers = useMemo(

@@ -13,7 +13,7 @@ import {
   updateTransaction,
   getTransactions,
 } from "@/lib/store/local-store";
-import type { Account, StoredTransaction } from "@/lib/store/types";
+import type { StoredTransaction } from "@/lib/store/types";
 import { isoToLocalInput, localInputToIso, fmtUsd, fmtQty, fmtPrice } from "@/lib/format";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 
@@ -41,7 +41,7 @@ function isOptDecimal(v: string): boolean {
 }
 
 const schema = z.object({
-  accountId: z.string().min(1, "เลือกบัญชี"),
+  brokerId: z.enum(["webull", "dime"]),
   ticker: z.string().trim().min(1, "ใส่ ticker"),
   exchange: z.enum(["NYSE", "NASDAQ", "OTHER"]),
   side: z.enum(["buy", "sell"]),
@@ -60,7 +60,7 @@ type FormValues = z.infer<typeof schema>;
 function toDefaults(tx?: StoredTransaction): FormValues {
   if (!tx) {
     return {
-      accountId: "acc_webull",
+      brokerId: "webull",
       ticker: "",
       exchange: "NASDAQ",
       side: "buy",
@@ -75,7 +75,7 @@ function toDefaults(tx?: StoredTransaction): FormValues {
     };
   }
   return {
-    accountId: tx.accountId,
+    brokerId: (tx.brokerId === "dime" ? "dime" : "webull") as "webull" | "dime",
     ticker: tx.ticker,
     exchange: tx.exchange ?? "OTHER",
     side: tx.side,
@@ -91,10 +91,8 @@ function toDefaults(tx?: StoredTransaction): FormValues {
 }
 
 export function TransactionForm({
-  accounts,
   editTx,
 }: {
-  accounts: Account[];
   editTx?: StoredTransaction;
 }) {
   const router = useRouter();
@@ -146,7 +144,7 @@ export function TransactionForm({
     // Guardrail: a sell cannot exceed shares currently held in that account.
     if (v.side === "sell") {
       const others = getTransactions().filter((t) => t.id !== editTx?.id);
-      const available = availableShares(others, v.accountId, v.ticker.toUpperCase());
+      const available = availableShares(others, v.brokerId, v.ticker.toUpperCase());
       if (D(v.qty).gt(available)) {
         setError("qty", {
           message: `ถือ ${fmtQty(available)} หุ้นในบัญชีนี้ ขายได้ไม่เกินจำนวนนั้น`,
@@ -156,7 +154,7 @@ export function TransactionForm({
     }
 
     const input = {
-      accountId: v.accountId,
+      brokerId: v.brokerId,
       ticker: v.ticker.toUpperCase(),
       exchange: v.exchange,
       side: v.side,
@@ -182,13 +180,10 @@ export function TransactionForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px] min-[2200px]:grid-cols-[minmax(0,1fr)_480px] min-[3200px]:grid-cols-[minmax(0,1fr)_520px]">
       <Card className="grid gap-4 sm:grid-cols-2">
-        <Field label="บัญชี" htmlFor="accountId" error={errors.accountId?.message}>
-          <Select id="accountId" {...register("accountId")}>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.broker} — {a.accountLabel}
-              </option>
-            ))}
+        <Field label="โบรกเกอร์" htmlFor="brokerId" error={errors.brokerId?.message}>
+          <Select id="brokerId" {...register("brokerId")}>
+            <option value="webull">Webull Thailand</option>
+            <option value="dime">Dime! USD</option>
           </Select>
         </Field>
 

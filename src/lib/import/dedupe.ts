@@ -6,7 +6,7 @@ import { Decimal } from "@/lib/money/decimal";
  * execution time match. Decimals are normalized so "10.90" == "10.9".
  */
 export interface TradeKeyFields {
-  accountId: string;
+  brokerId: string;
   ticker: string;
   side: string;
   qty: string;
@@ -25,7 +25,7 @@ function norm(v: string): string {
 
 export function tradeKey(t: TradeKeyFields): string {
   return [
-    t.accountId,
+    t.brokerId,
     t.ticker.trim().toUpperCase(),
     t.side,
     norm(t.qty),

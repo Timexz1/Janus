@@ -24,7 +24,7 @@ export type Broker = "Webull" | "Dime";
 
 export interface ParsedTrade {
   broker: Broker | null;
-  accountId: string | null;
+  brokerId: string | null;
   side: "buy" | "sell" | null;
   ticker: string | null;
   exchange: "NYSE" | "NASDAQ" | "OTHER" | null;
@@ -130,15 +130,13 @@ function normalizeBroker(raw: unknown): Broker | null {
 }
 
 /**
- * Only our own stable account ids are valid foreign keys. OCR sometimes returns
- * the broker's account NUMBER (e.g. "CTH4675306") in this field — never trust
- * that as our account id (it would break the transactions→accounts FK). Accept
- * only the known ids; otherwise derive the account from the broker.
+ * Map broker to a stable broker id. Accept "webull"/"dime" directly;
+ * otherwise derive from the broker field.
  */
-function normalizeAccountId(raw: unknown, broker: Broker | null): string | null {
+function normalizeBrokerId(raw: unknown, broker: Broker | null): string | null {
   const text = cleanStructuredText(raw)?.toLowerCase();
-  if (text === "acc_webull" || text === "acc_dime") return text;
-  return broker === "Webull" ? "acc_webull" : broker === "Dime" ? "acc_dime" : null;
+  if (text === "webull" || text === "dime") return text;
+  return broker === "Webull" ? "webull" : broker === "Dime" ? "dime" : null;
 }
 
 function normalizeSide(raw: unknown): "buy" | "sell" | null {
@@ -227,15 +225,15 @@ function parsedFromStructured(text: string): ParsedTrade | null {
   const rawText = cleanStructuredText(field(json, "rawText", "raw_text")) ?? text;
   const fallback = parseOcrText(rawText);
   const broker = normalizeBroker(field(parsed, "broker")) ?? fallback.broker;
-  const accountFromBroker =
-    broker === "Webull" ? "acc_webull" : broker === "Dime" ? "acc_dime" : null;
+  const brokerFromBroker =
+    broker === "Webull" ? "webull" : broker === "Dime" ? "dime" : null;
 
   const result: ParsedTrade = {
     broker,
-    accountId:
-      normalizeAccountId(field(parsed, "accountId", "account_id"), broker) ??
-      fallback.accountId ??
-      accountFromBroker,
+    brokerId:
+      normalizeBrokerId(field(parsed, "brokerId", "broker_id", "accountId", "account_id"), broker) ??
+      fallback.brokerId ??
+      brokerFromBroker,
     side: normalizeSide(field(parsed, "side")) ?? fallback.side,
     ticker: normalizeTicker(field(parsed, "ticker", "symbol")) ?? fallback.ticker,
     exchange: normalizeExchange(field(parsed, "exchange", "market")) ?? fallback.exchange,
@@ -484,7 +482,7 @@ function parseWebull(text: string): ParsedTrade {
   const date = parseWebullDate(text);
   return {
     broker: "Webull",
-    accountId: "acc_webull",
+    brokerId: "webull",
     side,
     ticker: detectTicker(text, side),
     exchange: detectExchange(text),
@@ -527,7 +525,7 @@ function parseDime(text: string): ParsedTrade {
       feesRaw && fx.gt(0) ? new Decimal(feesRaw).abs().div(fx).toString() : feesRaw;
     return {
       broker: "Dime",
-      accountId: "acc_dime",
+      brokerId: "dime",
       side,
       ticker: detectTicker(text, side),
       exchange: detectExchange(text),
@@ -546,7 +544,7 @@ function parseDime(text: string): ParsedTrade {
 
   return {
     broker: "Dime",
-    accountId: "acc_dime",
+    brokerId: "dime",
     side,
     ticker: detectTicker(text, side),
     exchange: detectExchange(text),
@@ -572,7 +570,7 @@ export function parseOcrText(text: string): ParsedTrade {
   const side = detectSide(text, null);
   return {
     broker: null,
-    accountId: null,
+    brokerId: null,
     side,
     ticker: detectTicker(text, side),
     exchange: detectExchange(text),

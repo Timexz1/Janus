@@ -5,13 +5,6 @@ import type { RemittanceDirection } from "@/lib/tax/remittance";
 export type Exchange = "NYSE" | "NASDAQ" | "OTHER";
 export type OcrProvider = "gemini" | "typhoon" | "claude";
 
-export interface Account {
-  id: string;
-  broker: string;
-  accountLabel: string;
-  currency: string;
-}
-
 /**
  * A persisted transaction. Decimal values are stored as STRINGS to avoid any
  * float drift through JSON (brief §0: never use float for money/shares). These
@@ -20,7 +13,7 @@ export interface Account {
  */
 export interface StoredTransaction {
   id: string;
-  accountId: string;
+  brokerId: string;
   ticker: string;
   exchange: Exchange | null;
   side: Side;
