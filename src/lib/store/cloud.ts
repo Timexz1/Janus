@@ -7,6 +7,7 @@ import {
   getIncomeByYear,
   getTaxSettings,
   getChartStates,
+  getCashBalances,
   DEFAULT_CHART_INDICATORS,
   setCloudMirror,
   loadSnapshot,
@@ -17,6 +18,8 @@ import type {
   StoredTransaction,
   Remittance,
   IncomeByYear,
+  CashBalance,
+  CashBalanceMap,
   TaxSettings,
   ChartState,
   ChartDrawing,
@@ -134,12 +137,13 @@ const chartStateFromDb = (r: Row): ChartState => ({
 
 // --- hydrate ---------------------------------------------------------------
 async function hydrate(sb: SupabaseClient, uid: string): Promise<void> {
-  const [tx, rem, inc, ts, chart] = await Promise.all([
+  const [tx, rem, inc, ts, chart, cash] = await Promise.all([
     sb.from("transactions").select("*"),
     sb.from("remittances").select("*"),
     sb.from("income_inputs").select("*"),
     sb.from("tax_settings").select("*").eq("user_id", uid).maybeSingle(),
     sb.from("chart_states").select("*"),
+    sb.from("cash_balances").select("*"),
   ]);
   const income: IncomeByYear = {};
   for (const r of (inc.data ?? []) as Row[]) income[r.tax_year as number] = String(r.other_income_thb);
@@ -148,12 +152,22 @@ async function hydrate(sb: SupabaseClient, uid: string): Promise<void> {
     const state = chartStateFromDb(r);
     chartStates[state.ticker] = state;
   }
+  const cashBalances: CashBalanceMap = {};
+  for (const r of (cash.data ?? []) as Row[]) {
+    const b: CashBalance = {
+      brokerId: r.broker_id as string,
+      amountUsd: String(r.amount_usd),
+      updatedAt: r.updated_at as string,
+    };
+    cashBalances[b.brokerId] = b;
+  }
   loadSnapshot({
     transactions: ((tx.data ?? []) as Row[]).map(txFromDb),
     remittances: ((rem.data ?? []) as Row[]).map(remFromDb),
     income,
     taxSettings: ts.data ? tsFromDb(ts.data as Row) : undefined,
     chartStates,
+    cashBalances,
   });
 }
 
@@ -203,6 +217,17 @@ async function mirrorNow(sb: SupabaseClient, uid: string, table: CloudTable) {
     }
   } else if (table === "tax_settings") {
     await run(sb.from("tax_settings").upsert(tsToDb(getTaxSettings(), uid), { onConflict: "user_id" }));
+  } else if (table === "cash_balances") {
+    const balances = getCashBalances();
+    const rows = Object.values(balances).map((b) => ({
+      user_id: uid,
+      broker_id: b.brokerId,
+      amount_usd: b.amountUsd,
+      updated_at: b.updatedAt,
+    }));
+    if (rows.length) {
+      await run(sb.from("cash_balances").upsert(rows, { onConflict: "user_id,broker_id" }));
+    }
   } else if (table === "chart_states") {
     const states = getChartStates();
     const rows = Object.values(states).map((s) => chartStateToDb(s, uid));

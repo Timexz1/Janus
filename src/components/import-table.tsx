@@ -302,6 +302,9 @@ export function ImportTable() {
       ),
     );
   }
+  function setAllBroker(brokerId: string) {
+    setRows((rs) => rs.map((r) => ({ ...r, fields: { ...r.fields, brokerId }, errors: [] })));
+  }
 
   function goToEdit(row: ImportRow, duplicateMessage?: string) {
     const field = firstEditableField(row, duplicateMessage);
@@ -638,7 +641,21 @@ export function ImportTable() {
                 <th className="sticky left-0 z-10 bg-slate-900 px-2 py-2.5 font-medium shadow-[1px_0_0_rgba(30,41,59,0.9)]">
                   รูป/สถานะ
                 </th>
-                <th className="px-2 py-2.5 font-medium">บัญชี</th>
+                <th className="px-2 py-2.5 font-medium">
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span>บัญชี</span>
+                    {rows.length > 0 && (
+                      <select
+                        className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[11px] text-slate-400 cursor-pointer hover:text-slate-200 focus:outline-none"
+                        onChange={(e) => { if (e.target.value) { setAllBroker(e.target.value); e.target.value = ""; } }}
+                      >
+                        <option value="">สลับทั้งหมด</option>
+                        <option value="webull">→ Webull Thailand</option>
+                        <option value="dime">→ Dime! USD</option>
+                      </select>
+                    )}
+                  </div>
+                </th>
                 <th className="px-2 py-2.5 font-medium">ประเภท</th>
                 <th className="px-2 py-2.5 font-medium">Ticker</th>
                 <th className="px-2 py-2.5 font-medium">ตลาด</th>

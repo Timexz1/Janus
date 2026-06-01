@@ -4,7 +4,7 @@ import {
   replayTransactions,
   InsufficientSharesError,
 } from "@/lib/engine/fifo";
-import type { EngineTransaction, NormalizedTrade } from "@/lib/engine/types";
+import type { EngineTransaction, NormalizedTrade, OpenLot } from "@/lib/engine/types";
 import type { StoredTransaction } from "@/lib/store/types";
 import type { SaleEvent } from "@/lib/tax/remittance";
 
@@ -39,6 +39,7 @@ export interface Holding {
   avgCost: Decimal; // per share
   costValue: Decimal; // qty × avgCost
   realizedGain: Decimal; // realized for this account+ticker
+  lots: OpenLot[]; // open FIFO lots for expanded-row display
 }
 
 export interface GroupError {
@@ -107,6 +108,7 @@ export function buildPortfolio(
           avgCost: costValue.div(qty),
           costValue,
           realizedGain,
+          lots: result.lots.filter((l) => l.qtyRemaining.gt(0)),
         });
       }
       totalOpenCost = totalOpenCost.plus(costValue);
