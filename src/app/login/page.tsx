@@ -119,9 +119,7 @@ export default function LoginPage() {
       </h1>
       <Card>
         <form
-          action={mode === "login" ? "/auth/login" : undefined}
-          method={mode === "login" ? "post" : undefined}
-          onSubmit={mode === "login" ? undefined : submit}
+          onSubmit={submit}
           className="space-y-4"
         >
         <Field label="อีเมล" htmlFor="email">
