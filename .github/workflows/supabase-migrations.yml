@@ -23,12 +23,17 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: nedplvjmiyjkkusbemof
+      # Authenticated GitHub API calls (setup-cli release lookup) avoid the
+      # unauthenticated shared-runner rate limit.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned (not "latest") so the install is a direct asset download and
+          # never hits the rate-limited "resolve latest release" GitHub API call.
+          version: 2.102.0
 
       - name: Link project
         run: supabase link --project-ref "$PROJECT_REF"
