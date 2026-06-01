@@ -10,6 +10,7 @@ import { computeTax } from "@/lib/tax/engine";
 import { toTaxableInputs } from "@/lib/tax/remittance";
 import { winRate, maxDrawdown, xirr, monthlyRealized, allocation } from "@/lib/metrics/metrics";
 import { useLastPrices } from "@/lib/prices/use-prices";
+import { useUsdThbRate } from "@/lib/prices/use-fx-rate";
 import { seedSampleData } from "@/lib/sample-data";
 import { MetricsSection } from "@/components/metrics-section";
 import { StockLogo } from "@/components/stock-logo";
@@ -33,19 +34,25 @@ export default function DashboardPage() {
   const saleEvents = useMemo(() => extractSaleEvents(transactions), [transactions]);
   const heldTickers = useMemo(() => portfolio.holdings.map((h) => h.ticker), [portfolio.holdings]);
   const { prices, quotes } = useLastPrices(heldTickers);
+  const { rate: fxRate, asOf: fxAsOf } = useUsdThbRate();
 
-  const { marketValue, pricedCost } = useMemo(() => {
+  const { marketValue, pricedCost, todayChangeUsd } = useMemo(() => {
     let mv = ZERO;
     let pc = ZERO;
+    let todayChange = ZERO;
     for (const h of portfolio.holdings) {
       const px = prices[h.ticker];
+      const q = quotes[h.ticker];
       if (px != null && Number.isFinite(px)) {
         mv = mv.plus(h.qty.times(px));
         pc = pc.plus(h.costValue);
       }
+      if (q?.last != null && q?.previousClose != null) {
+        todayChange = todayChange.plus(h.qty.times(q.last - q.previousClose));
+      }
     }
-    return { marketValue: mv, pricedCost: pc };
-  }, [portfolio.holdings, prices]);
+    return { marketValue: mv, pricedCost: pc, todayChangeUsd: todayChange };
+  }, [portfolio.holdings, prices, quotes]);
 
   const unrealized = marketValue.minus(pricedCost);
   const unrealizedPct = pricedCost.gt(0) ? unrealized.div(pricedCost).times(100).toNumber() : null;
@@ -138,16 +145,32 @@ export default function DashboardPage() {
       <PageHeader />
 
       {/* ─── Summary stats ───────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
+        {/* Row 1: portfolio value in USD */}
         <StatCard
           label="ต้นทุนรวม (เปิดอยู่)"
           value={fmtUsd(portfolio.totalOpenCost)}
-          hint={`${portfolio.openPositions} positions`}
+          hint="FIFO ต้นทุนเฉลี่ย"
         />
         <StatCard
-          label="มูลค่าตลาด"
+          label="มูลค่าตลาด (USD)"
           value={hasPrices ? fmtUsd(marketValue) : "—"}
           hint={mvHint}
+        />
+        <StatCard
+          label="มูลค่าตลาด (THB)"
+          value={hasPrices && fxRate ? fmtThb(marketValue.times(fxRate)) : "—"}
+          hint={fxRate ? `฿${fxRate.toFixed(2)}/USD` : "รอ FX..."}
+        />
+        <StatCard
+          label="เปลี่ยนวันนี้ (USD)"
+          value={todayChangeUsd.isZero() ? "—" : fmtSignedUsd(todayChangeUsd)}
+          tone={!todayChangeUsd.isZero() ? gainTone(todayChangeUsd) : "default"}
+          hint={
+            hasPrices && pricedCost.gt(0) && !todayChangeUsd.isZero()
+              ? fmtPct(todayChangeUsd.div(pricedCost).times(100).toNumber())
+              : undefined
+          }
         />
         <StatCard
           label="กำไรยังไม่เกิด"
@@ -162,7 +185,7 @@ export default function DashboardPage() {
           hint="FIFO ทุกรายการ"
         />
         <StatCard
-          label="XIRR (ผลตอบแทนต่อปี)"
+          label="XIRR (ต่อปี)"
           value={metrics.xirrText}
           tone={metrics.xirrPct != null ? (metrics.xirrPct > 0 ? "positive" : metrics.xirrPct < 0 ? "negative" : "default") : "default"}
           hint="IRR รวม unrealized"
@@ -171,6 +194,11 @@ export default function DashboardPage() {
           label="ภาษีประมาณ (ปีนี้)"
           value={fmtThb(taxTotal)}
           hint={`Win rate ${metrics.winRatePct.toFixed(0)}%`}
+        />
+        <StatCard
+          label="อัตราแลกเปลี่ยน"
+          value={fxRate ? `฿${fxRate.toFixed(2)}` : "—"}
+          hint={fxAsOf ? fmtDateTimeBangkok(fxAsOf) : "USD/THB"}
         />
       </div>
 
