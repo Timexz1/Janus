@@ -30,7 +30,7 @@ export default function DashboardPage() {
     () => portfolio.holdings.map((h) => h.ticker),
     [portfolio.holdings],
   );
-  const { prices } = useLastPrices(heldTickers);
+  const { prices, quotes } = useLastPrices(heldTickers);
 
   // market value + unrealized over the holdings we have a price for
   const { marketValue, pricedCost } = useMemo(() => {
@@ -135,6 +135,16 @@ export default function DashboardPage() {
   const BROKER_LABELS: Record<string, string> = { webull: "Webull Thailand", dime: "Dime! USD" };
   const brokerLabel = (id: string) => BROKER_LABELS[id] ?? id;
   const hasPrices = pricedCost.gt(0);
+  const latestQuoteTime = Object.values(quotes)
+    .map((quote) => quote.asOf)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+  const marketValueHint = hasPrices
+    ? latestQuoteTime
+      ? `Yahoo live - ${fmtDateTimeBangkok(latestQuoteTime)}`
+      : "Yahoo live"
+    : "...";
 
   return (
     <div className="space-y-5">
@@ -142,7 +152,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label={t("dashboard.openCost")} value={fmtUsd(portfolio.totalOpenCost)} hint={`${portfolio.openPositions} ${t("nav.holdings")}`} />
-        <StatCard label={t("dashboard.marketValue")} value={hasPrices ? fmtUsd(marketValue) : "—"} hint={hasPrices ? "Yahoo" : "…"} />
+        <StatCard label={t("dashboard.marketValue")} value={hasPrices ? fmtUsd(marketValue) : "—"} hint={marketValueHint} />
         <StatCard
           label={t("dashboard.unrealized")}
           value={hasPrices ? fmtSignedUsd(unrealized) : "—"}

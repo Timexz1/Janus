@@ -19,6 +19,7 @@
     "@hookform/resolvers": "^5.4.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
+    "@vercel/speed-insights": "^2.0.0",
     "dayjs": "^1.11.21",
     "decimal.js": "^10.6.0",
     "lightweight-charts": "^5.2.0",

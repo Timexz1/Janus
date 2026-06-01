@@ -24,7 +24,7 @@ export default function LoginPage() {
   // server login or the recovery callback).
   useEffect(() => {
     const err = new URLSearchParams(window.location.search).get("error");
-    if (err) setMsg(err);
+    if (err) queueMicrotask(() => setMsg(err));
   }, []);
 
   if (!configured) {
