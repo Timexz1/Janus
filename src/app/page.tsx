@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Database, Plus, TrendingUp } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
@@ -15,7 +15,7 @@ import { seedSampleData } from "@/lib/sample-data";
 import { MetricsSection } from "@/components/metrics-section";
 import { StockLogo } from "@/components/stock-logo";
 import { TickerLink } from "@/components/ticker-link";
-import { Badge, Button, Card, EmptyState, StatCard } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Select, StatCard } from "@/components/ui";
 import { D, ZERO } from "@/lib/money/decimal";
 import { fmtUsd, fmtSignedUsd, fmtThb, fmtQty, fmtPrice, fmtDateTimeBangkok, gainTone } from "@/lib/format";
 
@@ -29,9 +29,14 @@ function fmtPct(n: number | null | undefined, decimals = 2) {
 export default function DashboardPage() {
   const { transactions, remittances, taxSettings, incomeByYear, cashBalances, hydrated } = useStore();
   const { t } = useT();
+  const [brokerFilter, setBrokerFilter] = useState("all");
 
-  const portfolio = useMemo(() => buildPortfolio(transactions), [transactions]);
-  const saleEvents = useMemo(() => extractSaleEvents(transactions), [transactions]);
+  const filteredTransactions = useMemo(
+    () => transactions.filter((tx) => brokerFilter === "all" || tx.brokerId === brokerFilter),
+    [transactions, brokerFilter],
+  );
+  const portfolio = useMemo(() => buildPortfolio(filteredTransactions), [filteredTransactions]);
+  const saleEvents = useMemo(() => extractSaleEvents(filteredTransactions), [filteredTransactions]);
   const heldTickers = useMemo(() => portfolio.holdings.map((h) => h.ticker), [portfolio.holdings]);
   const { prices, quotes } = useLastPrices(heldTickers);
   const { rate: fxRate, asOf: fxAsOf } = useUsdThbRate();
@@ -54,9 +59,13 @@ export default function DashboardPage() {
     return { marketValue: mv, pricedCost: pc, todayChangeUsd: todayChange };
   }, [portfolio.holdings, prices, quotes]);
 
+  const filteredCashBalances = useMemo(
+    () => Object.values(cashBalances).filter((balance) => brokerFilter === "all" || balance.brokerId === brokerFilter),
+    [cashBalances, brokerFilter],
+  );
   const totalCashUsd = useMemo(
-    () => Object.values(cashBalances).reduce((s, b) => s.plus(D(b.amountUsd)), ZERO),
-    [cashBalances],
+    () => filteredCashBalances.reduce((s, b) => s.plus(D(b.amountUsd)), ZERO),
+    [filteredCashBalances],
   );
 
   const unrealized = marketValue.minus(pricedCost);
@@ -90,7 +99,7 @@ export default function DashboardPage() {
     const alloc = allocation(
       portfolio.holdings.map((h) => ({ key: h.ticker, value: Number(h.costValue.toString()) })),
     );
-    const flows = transactions.map((tx) => {
+    const flows = filteredTransactions.map((tx) => {
       const n = normalizeStored(tx);
       const net = Number(n.net.toString());
       return { date: tx.executedAt.slice(0, 10), amount: tx.side === "buy" ? -net : net };
@@ -107,7 +116,7 @@ export default function DashboardPage() {
       allocation: alloc,
       monthly,
     };
-  }, [saleEvents, portfolio.holdings, transactions, marketValue]);
+  }, [saleEvents, portfolio.holdings, filteredTransactions, marketValue]);
 
   if (!hydrated) {
     return (
@@ -135,7 +144,7 @@ export default function DashboardPage() {
     );
   }
 
-  const recent = [...transactions].sort((a, b) => (a.executedAt < b.executedAt ? 1 : -1)).slice(0, 6);
+  const recent = [...filteredTransactions].sort((a, b) => (a.executedAt < b.executedAt ? 1 : -1)).slice(0, 6);
   const hasPrices = pricedCost.gt(0);
   const latestQuoteTime = Object.values(quotes).map((q) => q.asOf).filter((v): v is string => Boolean(v)).sort().at(-1);
   const quoteSource = Object.values(quotes).map((q) => q.source).find(Boolean);
@@ -154,8 +163,25 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader />
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-slate-400">Account view</span>
+        <div className="w-full sm:w-56">
+          <Select value={brokerFilter} onChange={(e) => setBrokerFilter(e.target.value)} aria-label="Filter dashboard by broker">
+            <option value="all">Webull + Dime</option>
+            <option value="webull">Webull only</option>
+            <option value="dime">Dime only</option>
+          </Select>
+        </div>
+      </div>
 
       {/* ─── Portfolio hero banner ────────────────────────────────── */}
+      {filteredTransactions.length === 0 ? (
+        <EmptyState
+          title="No transactions for this account"
+          description="Try switching the account filter back to Webull + Dime, or add a transaction for this broker."
+        />
+      ) : (
+        <>
       <div className="rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-6">
           {/* Left: total value (stocks + cash) */}
@@ -261,12 +287,15 @@ export default function DashboardPage() {
           <ul className="divide-y divide-slate-800/70">
             {recent.map((tx) => {
               const n = normalizeStored(tx);
-              const quote = quotes[tx.ticker];
               const px = prices[tx.ticker];
               const hasPx = px != null && Number.isFinite(px);
-              const changePct = quote?.last != null && quote?.previousClose != null && quote.previousClose !== 0
-                ? ((quote.last - quote.previousClose) / quote.previousClose) * 100
+              const txPrice = parseFloat(tx.price);
+              // P/L % from executed price → current market price
+              const plPct = hasPx && txPrice > 0
+                ? ((px! - txPrice) / txPrice) * 100
                 : null;
+              // For sells: flip sign (if price went up after selling, that's a missed gain — show negative)
+              const displayPct = plPct != null && tx.side === "sell" ? -plPct : plPct;
               return (
                 <li key={tx.id} className="flex items-center gap-3 py-2.5">
                   <StockLogo ticker={tx.ticker} size={28} />
@@ -280,9 +309,9 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm tabular-nums text-slate-200">{fmtUsd(n.net)}</p>
-                    {hasPx && changePct != null && (
-                      <p className={`text-xs tabular-nums ${changePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        {fmtPct(changePct)}
+                    {displayPct != null && (
+                      <p className={`text-xs tabular-nums ${displayPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {fmtPct(displayPct)}
                       </p>
                     )}
                   </div>
@@ -383,6 +412,8 @@ export default function DashboardPage() {
       </div>
 
       {taxSettings?.showMetrics && <MetricsSection data={metrics} />}
+        </>
+      )}
     </div>
   );
 }
