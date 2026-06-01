@@ -12,6 +12,7 @@ import { seedSampleData } from "@/lib/sample-data";
 import { Badge, Button, Card, EmptyState, Select } from "@/components/ui";
 import { TickerLink } from "@/components/ticker-link";
 import { fmtUsd, fmtSignedUsd, fmtQty, fmtPrice, fmtDateTimeBangkok, gainTone } from "@/lib/format";
+import { ImportTransactions } from "@/components/import-transactions";
 
 export default function TransactionsPage() {
   const { transactions, hydrated } = useStore();
@@ -55,11 +56,14 @@ export default function TransactionsPage() {
             แก้ไข/ลบได้ — ระบบจะคำนวณต้นทุนและกำไรใหม่อัตโนมัติ
           </p>
         </div>
-        <Link href="/transactions/new" className="shrink-0">
-          <Button>
-            <Plus className="h-4 w-4" aria-hidden /> เพิ่มรายการ
-          </Button>
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ImportTransactions />
+          <Link href="/transactions/new">
+            <Button>
+              <Plus className="h-4 w-4" aria-hidden /> เพิ่มรายการ
+            </Button>
+          </Link>
+        </div>
       </header>
 
       {transactions.length === 0 ? (
