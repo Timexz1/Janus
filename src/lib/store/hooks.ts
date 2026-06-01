@@ -6,12 +6,14 @@ import type {
   Remittance,
   TaxSettings,
   IncomeByYear,
+  CashBalanceMap,
 } from "./types";
 import {
   getTransactions,
   getRemittances,
   getTaxSettings,
   getIncomeByYear,
+  getCashBalances,
   STORE_CHANGE_EVENT,
 } from "./local-store";
 
@@ -20,6 +22,7 @@ export function useStore() {
   const [remittances, setRemittances] = useState<Remittance[]>([]);
   const [taxSettings, setTaxSettings] = useState<TaxSettings | null>(null);
   const [incomeByYear, setIncomeByYear] = useState<IncomeByYear>({});
+  const [cashBalances, setCashBalances] = useState<CashBalanceMap>({});
   const [hydrated, setHydrated] = useState(false);
 
   const refresh = useCallback(() => {
@@ -27,6 +30,7 @@ export function useStore() {
     setRemittances(getRemittances());
     setTaxSettings(getTaxSettings());
     setIncomeByYear(getIncomeByYear());
+    setCashBalances(getCashBalances());
     setHydrated(true);
   }, []);
 
@@ -44,5 +48,5 @@ export function useStore() {
     };
   }, [refresh]);
 
-  return { transactions, remittances, taxSettings, incomeByYear, hydrated };
+  return { transactions, remittances, taxSettings, incomeByYear, cashBalances, hydrated };
 }

@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { Fragment, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, ExternalLink, Pencil, Check } from "lucide-react";
 import { Card, EmptyState, StatCard } from "@/components/ui";
 import { StockLogo } from "@/components/stock-logo";
 import { TickerLink } from "@/components/ticker-link";
 import { useT } from "@/lib/i18n/context";
 import { fmtPrice, fmtQty, fmtSignedUsd, fmtUsd, gainTone, fmtDateTimeBangkok } from "@/lib/format";
-import { Decimal, ZERO } from "@/lib/money/decimal";
+import { Decimal, D, ZERO } from "@/lib/money/decimal";
 import { buildPortfolio } from "@/lib/portfolio/portfolio";
 import { useLastPrices } from "@/lib/prices/use-prices";
 import { useStore } from "@/lib/store/hooks";
+import { setCashBalance } from "@/lib/store/local-store";
 
 const BROKER_LABELS: Record<string, string> = { webull: "Webull", dime: "Dime" };
 
@@ -35,8 +36,71 @@ function MarketBadge({ state }: { state: string | null }) {
   );
 }
 
+function CashRow({ brokerId, label, current }: { brokerId: string; label: string; current: string }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(current || "0");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function save() {
+    const n = parseFloat(val);
+    if (!isNaN(n) && n >= 0) setCashBalance(brokerId, String(n));
+    setEditing(false);
+  }
+
+  return (
+    <tr className="bg-slate-900/40">
+      <td className="px-2 py-2" />
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs font-bold text-slate-300">
+            $
+          </span>
+          <span className="text-sm text-slate-400">เงินสด — {label}</span>
+        </div>
+      </td>
+      <td className="px-4 py-2 text-xs text-slate-600">—</td>
+      <td colSpan={9} className="px-4 py-2" />
+      <td className="px-4 py-2">
+        <div className="flex items-center justify-end gap-1">
+          {editing ? (
+            <>
+              <span className="text-xs text-slate-500">$</span>
+              <input
+                ref={inputRef}
+                type="number"
+                min="0"
+                step="0.01"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+                className="w-28 rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-right text-sm tabular-nums text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                autoFocus
+              />
+              <button onClick={save} className="rounded p-1 text-emerald-400 hover:bg-slate-700">
+                <Check className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-sm tabular-nums text-slate-300">
+                {fmtUsd(D(current || "0"))}
+              </span>
+              <button
+                onClick={() => { setVal(current || "0"); setEditing(true); }}
+                className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function HoldingsPage() {
-  const { transactions, hydrated } = useStore();
+  const { transactions, cashBalances, hydrated } = useStore();
   const portfolio = useMemo(() => buildPortfolio(transactions), [transactions]);
   const { t } = useT();
   const { prices, quotes } = useLastPrices(portfolio.holdings.map((h) => h.ticker));
@@ -63,17 +127,26 @@ export default function HoldingsPage() {
     return { rows, totalMV };
   }, [portfolio.holdings, prices, quotes]);
 
-  // Summary totals
+  // Total cash across all brokers
+  const totalCashUsd = useMemo(() => {
+    return Object.values(cashBalances).reduce(
+      (sum, b) => sum.plus(D(b.amountUsd)),
+      ZERO,
+    );
+  }, [cashBalances]);
+
+  // Summary totals (stocks + cash)
   const totals = useMemo(() => {
     let cost = ZERO;
     for (const { holding, hasPx } of holdingData.rows) {
       if (hasPx) cost = cost.plus(holding.costValue);
     }
-    const mv = holdingData.totalMV;
-    const unrealized = mv.minus(cost);
+    const stockMV = holdingData.totalMV;
+    const totalMV = stockMV.plus(totalCashUsd);
+    const unrealized = stockMV.minus(cost);
     const uplPct = cost.gt(0) ? unrealized.toNumber() / cost.toNumber() * 100 : null;
-    return { mv, cost, unrealized, uplPct, hasPrices: cost.gt(0) };
-  }, [holdingData]);
+    return { mv: totalMV, stockMV, cost, unrealized, uplPct, hasPrices: cost.gt(0) };
+  }, [holdingData, totalCashUsd]);
 
   if (!hydrated) return <Card className="h-48 animate-pulse" />;
 
@@ -120,6 +193,16 @@ export default function HoldingsPage() {
           tone={gainTone(portfolio.totalRealizedGain)}
         />
         <StatCard label="จำนวน positions" value={String(portfolio.openPositions)} />
+        <StatCard
+          label="เงินสดรวม"
+          value={fmtUsd(totalCashUsd)}
+          hint="Webull + Dime"
+        />
+        <StatCard
+          label="มูลค่ารวม (หุ้น+เงินสด)"
+          value={totals.hasPrices ? fmtUsd(totals.mv) : "—"}
+          hint={totals.hasPrices && !totalCashUsd.isZero() ? `หุ้น ${fmtUsd(totals.stockMV)} + เงินสด ${fmtUsd(totalCashUsd)}` : undefined}
+        />
       </div>
 
       {portfolio.holdings.length === 0 ? (
@@ -310,6 +393,15 @@ export default function HoldingsPage() {
                   </Fragment>
                 );
               })}
+              {/* Cash balance rows — one per broker */}
+              {(["webull", "dime"] as const).map((brokerId) => (
+                <CashRow
+                  key={brokerId}
+                  brokerId={brokerId}
+                  label={BROKER_LABELS[brokerId]}
+                  current={cashBalances[brokerId]?.amountUsd ?? "0"}
+                />
+              ))}
             </tbody>
           </table>
         </Card>

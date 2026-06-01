@@ -74,6 +74,16 @@ export interface TaxSettings {
   claudeModel: string;
 }
 
+/** Cash balance snapshot per broker (user-maintained, not auto-calculated). */
+export interface CashBalance {
+  brokerId: string;
+  amountUsd: string; // decimal string, same pattern as other money fields
+  updatedAt: string;
+}
+
+/** Cash balances keyed by brokerId. */
+export type CashBalanceMap = Record<string, CashBalance>;
+
 /** Other (non-foreign) income per tax year (brief §5 income_inputs). */
 export type IncomeByYear = Record<number, string>; // taxYear → otherIncomeThb
 

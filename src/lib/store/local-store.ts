@@ -5,6 +5,8 @@ import type {
   RemittanceInputData,
   TaxSettings,
   IncomeByYear,
+  CashBalance,
+  CashBalanceMap,
   ChartState,
   ChartPeriod,
   ChartTimeframe,
@@ -29,6 +31,7 @@ const REMITTANCES_KEY = "janus.remittances.v1";
 const TAX_SETTINGS_KEY = "janus.taxSettings.v1";
 const INCOME_KEY = "janus.income.v1";
 const CHART_STATES_KEY = "janus.chartStates.v1";
+const CASH_BALANCES_KEY = "janus.cashBalances.v1";
 export const STORE_CHANGE_EVENT = "janus:store-change";
 
 export const DEFAULT_CHART_INDICATORS: ChartIndicators = {
@@ -46,7 +49,8 @@ export type CloudTable =
   | "remittances"
   | "income_inputs"
   | "tax_settings"
-  | "chart_states";
+  | "chart_states"
+  | "cash_balances";
 
 const KEY_TABLE: Record<string, CloudTable> = {
   [TXNS_KEY]: "transactions",
@@ -54,6 +58,7 @@ const KEY_TABLE: Record<string, CloudTable> = {
   [INCOME_KEY]: "income_inputs",
   [TAX_SETTINGS_KEY]: "tax_settings",
   [CHART_STATES_KEY]: "chart_states",
+  [CASH_BALANCES_KEY]: "cash_balances",
 };
 
 let cloudMirror: ((table: CloudTable) => void) | null = null;
@@ -99,6 +104,7 @@ export function loadSnapshot(s: {
   income?: IncomeByYear;
   taxSettings?: Partial<TaxSettings>;
   chartStates?: Record<string, ChartState>;
+  cashBalances?: CashBalanceMap;
 }): void {
   if (typeof window === "undefined") return;
   runSuppressed(() => {
@@ -107,6 +113,7 @@ export function loadSnapshot(s: {
     if (s.income) write(INCOME_KEY, s.income);
     if (s.taxSettings) write(TAX_SETTINGS_KEY, { ...getTaxSettings(), ...s.taxSettings });
     if (s.chartStates) write(CHART_STATES_KEY, s.chartStates);
+    if (s.cashBalances) write(CASH_BALANCES_KEY, s.cashBalances);
   });
   window.dispatchEvent(new Event(STORE_CHANGE_EVENT));
 }
@@ -114,10 +121,22 @@ export function loadSnapshot(s: {
 /** Wipe the local cache (on logout, or before hydrating another user). */
 export function clearLocalData(): void {
   if (typeof window === "undefined") return;
-  [TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY, CHART_STATES_KEY].forEach((k) =>
+  [TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY, CHART_STATES_KEY, CASH_BALANCES_KEY].forEach((k) =>
     window.localStorage.removeItem(k),
   );
   window.dispatchEvent(new Event(STORE_CHANGE_EVENT));
+}
+
+export function getCashBalances(): CashBalanceMap {
+  return read<CashBalanceMap>(CASH_BALANCES_KEY, {});
+}
+
+export function setCashBalance(brokerId: string, amountUsd: string): void {
+  const existing = getCashBalances();
+  write(CASH_BALANCES_KEY, {
+    ...existing,
+    [brokerId]: { brokerId, amountUsd, updatedAt: new Date().toISOString() },
+  });
 }
 
 export function getTransactions(): StoredTransaction[] {

@@ -27,7 +27,7 @@ function fmtPct(n: number | null | undefined, decimals = 2) {
 }
 
 export default function DashboardPage() {
-  const { transactions, remittances, taxSettings, incomeByYear, hydrated } = useStore();
+  const { transactions, remittances, taxSettings, incomeByYear, cashBalances, hydrated } = useStore();
   const { t } = useT();
 
   const portfolio = useMemo(() => buildPortfolio(transactions), [transactions]);
@@ -53,6 +53,11 @@ export default function DashboardPage() {
     }
     return { marketValue: mv, pricedCost: pc, todayChangeUsd: todayChange };
   }, [portfolio.holdings, prices, quotes]);
+
+  const totalCashUsd = useMemo(
+    () => Object.values(cashBalances).reduce((s, b) => s.plus(D(b.amountUsd)), ZERO),
+    [cashBalances],
+  );
 
   const unrealized = marketValue.minus(pricedCost);
   const unrealizedPct = pricedCost.gt(0) ? unrealized.div(pricedCost).times(100).toNumber() : null;
@@ -153,15 +158,22 @@ export default function DashboardPage() {
       {/* ─── Portfolio hero banner ────────────────────────────────── */}
       <div className="rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 px-6 py-5">
         <div className="flex flex-wrap items-start justify-between gap-6">
-          {/* Left: total value */}
+          {/* Left: total value (stocks + cash) */}
           <div>
             <p className="text-xs font-medium uppercase tracking-widest text-slate-500">มูลค่าทรัพย์สินทั้งหมด</p>
             <p className="mt-1 text-3xl font-bold tracking-tight text-slate-100">
-              {hasPrices && fxRate ? fmtThb(marketValue.times(fxRate)) : "—"}
+              {hasPrices && fxRate
+                ? fmtThb(marketValue.plus(totalCashUsd).times(fxRate))
+                : "—"}
             </p>
             <p className="mt-0.5 text-sm tabular-nums text-slate-400">
-              {hasPrices ? fmtUsd(marketValue) : "—"}
+              {hasPrices ? fmtUsd(marketValue.plus(totalCashUsd)) : "—"}
             </p>
+            {!totalCashUsd.isZero() && (
+              <p className="mt-0.5 text-xs text-slate-600">
+                หุ้น {hasPrices ? fmtUsd(marketValue) : "—"} · เงินสด {fmtUsd(totalCashUsd)}
+              </p>
+            )}
           </div>
 
           {/* Right: today's change + FX rate */}
