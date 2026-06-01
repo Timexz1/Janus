@@ -17,7 +17,7 @@ import { StockLogo } from "@/components/stock-logo";
 import { TickerLink } from "@/components/ticker-link";
 import { Badge, Button, Card, EmptyState, Select, StatCard } from "@/components/ui";
 import { D, ZERO } from "@/lib/money/decimal";
-import { fmtUsd, fmtSignedUsd, fmtThb, fmtQty, fmtPrice, fmtDateTimeBangkok, gainTone } from "@/lib/format";
+import { fmtUsd, fmtSignedUsd, fmtThb, fmtQty, fmtDateTimeBangkok, gainTone } from "@/lib/format";
 
 const BROKER_LABELS: Record<string, string> = { webull: "Webull", dime: "Dime" };
 
@@ -290,12 +290,11 @@ export default function DashboardPage() {
               const px = prices[tx.ticker];
               const hasPx = px != null && Number.isFinite(px);
               const txPrice = parseFloat(tx.price);
-              // P/L % from executed price → current market price
-              const plPct = hasPx && txPrice > 0
-                ? ((px! - txPrice) / txPrice) * 100
+              // Only show % for sell transactions: (sellPrice − currentPrice) / sellPrice
+              // positive = ขายได้ราคาดีกว่าตลาดตอนนี้, negative = ราคาขึ้นหลังขาย
+              const displayPct = tx.side === "sell" && hasPx && txPrice > 0
+                ? ((txPrice - px!) / txPrice) * 100
                 : null;
-              // For sells: flip sign (if price went up after selling, that's a missed gain — show negative)
-              const displayPct = plPct != null && tx.side === "sell" ? -plPct : plPct;
               return (
                 <li key={tx.id} className="flex items-center gap-3 py-2.5">
                   <StockLogo ticker={tx.ticker} size={28} />
