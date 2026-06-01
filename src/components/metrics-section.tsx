@@ -19,7 +19,6 @@ const DONUT_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#a
 
 export interface MetricsData {
   winRatePct: number;
-  xirrText: string;
   maxDdPct: number;
   allocation: { key: string; value: number; pct: number }[];
   monthly: { month: string; gain: number }[];
@@ -28,9 +27,8 @@ export interface MetricsData {
 export function MetricsSection({ data }: { data: MetricsData }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <StatCard label="Win rate" value={`${data.winRatePct.toFixed(0)}%`} hint="สัดส่วนการขายที่กำไร" />
-        <StatCard label="XIRR (ต่อปี)" value={data.xirrText} hint="ผลตอบแทนถ่วงเวลา" />
         <StatCard label="Max drawdown" value={`${data.maxDdPct.toFixed(1)}%`} hint="กำไรสะสม realized" />
       </div>
 

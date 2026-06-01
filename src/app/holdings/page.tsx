@@ -173,36 +173,55 @@ export default function HoldingsPage() {
         </p>
       </header>
 
-      {/* Summary stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="ต้นทุนรวมที่ถือ" value={fmtUsd(portfolio.totalOpenCost)} />
-        <StatCard label="มูลค่าตลาด" value={totals.hasPrices ? fmtUsd(totals.mv) : "—"} />
-        <StatCard
-          label="ยังไม่เกิด (P/L)"
-          value={totals.hasPrices ? fmtSignedUsd(totals.unrealized) : "—"}
-          tone={totals.hasPrices ? gainTone(totals.unrealized) : "default"}
-        />
-        <StatCard
-          label="% ผลตอบแทน"
-          value={totals.uplPct != null ? fmtPct(totals.uplPct) : "—"}
-          tone={totals.uplPct != null ? (totals.uplPct > 0 ? "positive" : totals.uplPct < 0 ? "negative" : "default") : "default"}
-        />
-        <StatCard
-          label="กำไร realized"
-          value={fmtSignedUsd(portfolio.totalRealizedGain)}
-          tone={gainTone(portfolio.totalRealizedGain)}
-        />
-        <StatCard label="จำนวน positions" value={String(portfolio.openPositions)} />
-        <StatCard
-          label="เงินสดรวม"
-          value={fmtUsd(totalCashUsd)}
-          hint="Webull + Dime"
-        />
-        <StatCard
-          label="มูลค่ารวม (หุ้น+เงินสด)"
-          value={totals.hasPrices ? fmtUsd(totals.mv) : "—"}
-          hint={totals.hasPrices && !totalCashUsd.isZero() ? `หุ้น ${fmtUsd(totals.stockMV)} + เงินสด ${fmtUsd(totalCashUsd)}` : undefined}
-        />
+      {/* Summary stats — featured card + 2×2 grid */}
+      <div className="grid gap-3 grid-cols-1 lg:grid-cols-[2fr_1fr_1fr]">
+        {/* Featured: total portfolio value */}
+        <div className="flex flex-col justify-center rounded-lg border border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-6 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-widest text-slate-500">มูลค่ารวม (หุ้น+เงินสด)</p>
+          <p className="mt-3 text-4xl font-bold tabular-nums tracking-tight text-slate-100">
+            {totals.hasPrices ? fmtUsd(totals.mv) : "—"}
+          </p>
+          {totals.hasPrices && !totalCashUsd.isZero() && (
+            <p className="mt-2 text-sm text-slate-500">
+              หุ้น {fmtUsd(totals.stockMV)} · เงินสด {fmtUsd(totalCashUsd)}
+            </p>
+          )}
+        </div>
+
+        {/* Right col 1 */}
+        <div className="flex flex-col gap-3">
+          <StatCard
+            className="flex-1"
+            label="ยังไม่เกิด (P/L)"
+            value={totals.hasPrices ? fmtSignedUsd(totals.unrealized) : "—"}
+            tone={totals.hasPrices ? gainTone(totals.unrealized) : "default"}
+            hint={totals.uplPct != null ? fmtPct(totals.uplPct) : undefined}
+            hintTone={totals.uplPct != null ? (totals.uplPct > 0 ? "positive" : totals.uplPct < 0 ? "negative" : undefined) : undefined}
+          />
+          <StatCard
+            className="flex-1"
+            label="กำไร Realized"
+            value={fmtSignedUsd(portfolio.totalRealizedGain)}
+            tone={gainTone(portfolio.totalRealizedGain)}
+            hint="FIFO ทุกรายการ"
+          />
+        </div>
+
+        {/* Right col 2 */}
+        <div className="flex flex-col gap-3">
+          <StatCard
+            className="flex-1"
+            label="ต้นทุนรวมที่ถือ"
+            value={fmtUsd(portfolio.totalOpenCost)}
+            hint="FIFO ต้นทุนเฉลี่ย"
+          />
+          <StatCard
+            className="flex-1"
+            label="เงินสดรวม"
+            value={fmtUsd(totalCashUsd)}
+            hint="Webull + Dime"
+          />
+        </div>
       </div>
 
       {portfolio.holdings.length === 0 ? (

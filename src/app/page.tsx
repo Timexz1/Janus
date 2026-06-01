@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n/context";
 import { buildPortfolio, extractSaleEvents, normalizeStored } from "@/lib/portfolio/portfolio";
 import { computeTax } from "@/lib/tax/engine";
 import { toTaxableInputs } from "@/lib/tax/remittance";
-import { winRate, maxDrawdown, xirr, monthlyRealized, allocation } from "@/lib/metrics/metrics";
+import { winRate, maxDrawdown, monthlyRealized, allocation } from "@/lib/metrics/metrics";
 import { useLastPrices } from "@/lib/prices/use-prices";
 import { useUsdThbRate } from "@/lib/prices/use-fx-rate";
 import { seedSampleData } from "@/lib/sample-data";
@@ -99,19 +99,8 @@ export default function DashboardPage() {
     const alloc = allocation(
       portfolio.holdings.map((h) => ({ key: h.ticker, value: Number(h.costValue.toString()) })),
     );
-    const flows = filteredTransactions.map((tx) => {
-      const n = normalizeStored(tx);
-      const net = Number(n.net.toString());
-      return { date: tx.executedAt.slice(0, 10), amount: tx.side === "buy" ? -net : net };
-    });
-    if (marketValue.gt(0)) {
-      flows.push({ date: new Date().toISOString().slice(0, 10), amount: Number(marketValue.toString()) });
-    }
-    const r = xirr(flows);
     return {
       winRatePct: winRate(gains) * 100,
-      xirrPct: r != null ? r * 100 : null,
-      xirrText: r == null ? "—" : `${(r * 100).toFixed(1)}%`,
       maxDdPct: maxDrawdown(curve) * 100,
       allocation: alloc,
       monthly,
@@ -177,19 +166,23 @@ export default function DashboardPage() {
           {/* Left: total value (stocks + cash) */}
           <div>
             <p className="text-xs font-medium uppercase tracking-widest text-slate-500">มูลค่าทรัพย์สินทั้งหมด</p>
-            <p className="mt-1 text-3xl font-bold tracking-tight text-slate-100">
-              {hasPrices && fxRate
-                ? fmtThb(marketValue.plus(totalCashUsd).times(fxRate))
-                : "—"}
-            </p>
-            <p className="mt-0.5 text-sm tabular-nums text-slate-400">
-              {hasPrices ? fmtUsd(marketValue.plus(totalCashUsd)) : "—"}
-            </p>
-            {!totalCashUsd.isZero() && (
-              <p className="mt-0.5 text-xs text-slate-600">
-                หุ้น {hasPrices ? fmtUsd(marketValue) : "—"} · เงินสด {fmtUsd(totalCashUsd)}
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+              <p className="text-3xl font-bold tracking-tight text-slate-100">
+                {hasPrices && fxRate
+                  ? fmtThb(marketValue.plus(totalCashUsd).times(fxRate))
+                  : "—"}
               </p>
-            )}
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-sm tabular-nums text-slate-400">
+                  {hasPrices ? fmtUsd(marketValue.plus(totalCashUsd)) : "—"}
+                </span>
+                {!totalCashUsd.isZero() && (
+                  <span className="text-xs text-slate-600">
+                    หุ้น {hasPrices ? fmtUsd(marketValue) : "—"} · เงินสด {fmtUsd(totalCashUsd)}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Right: today's change + FX rate */}
@@ -217,35 +210,46 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── Summary stats ───────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard
-          label="ต้นทุนรวม (เปิดอยู่)"
-          value={fmtUsd(portfolio.totalOpenCost)}
-          hint="FIFO ต้นทุนเฉลี่ย"
-        />
-        <StatCard
-          label="มูลค่าตลาด"
-          value={hasPrices ? fmtUsd(marketValue) : "—"}
-          hint={mvHint}
-        />
-        <StatCard
-          label="กำไรยังไม่เกิด"
-          value={hasPrices ? fmtSignedUsd(unrealized) : "—"}
-          tone={hasPrices ? gainTone(unrealized) : "default"}
-          hint={hasPrices && unrealizedPct != null ? fmtPct(unrealizedPct) : undefined}
-        />
-        <StatCard
-          label="กำไร Realized"
-          value={fmtSignedUsd(portfolio.totalRealizedGain)}
-          tone={gainTone(portfolio.totalRealizedGain)}
-          hint="FIFO ทุกรายการ"
-        />
-
-        <StatCard
-          label="ภาษีประมาณ (ปีนี้)"
-          value={fmtThb(taxTotal)}
-          hint={`Win rate ${metrics.winRatePct.toFixed(0)}%`}
-        />
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-600">สถานะปัจจุบัน</p>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+            <StatCard
+              label="มูลค่าตลาด"
+              value={hasPrices ? fmtUsd(marketValue) : "—"}
+              hint={mvHint}
+            />
+            <StatCard
+              label="กำไรยังไม่เกิด (P/L)"
+              value={hasPrices ? fmtSignedUsd(unrealized) : "—"}
+              tone={hasPrices ? gainTone(unrealized) : "default"}
+              hint={hasPrices && unrealizedPct != null ? fmtPct(unrealizedPct) : undefined}
+              hintTone={hasPrices ? (unrealized.gt(0) ? "positive" : unrealized.lt(0) ? "negative" : undefined) : undefined}
+            />
+            <StatCard
+              label="ต้นทุนรวม (เปิดอยู่)"
+              value={fmtUsd(portfolio.totalOpenCost)}
+              hint="FIFO ต้นทุนเฉลี่ย"
+            />
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-600">ประวัติ</p>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+            <StatCard
+              label="กำไร Realized"
+              value={fmtSignedUsd(portfolio.totalRealizedGain)}
+              tone={gainTone(portfolio.totalRealizedGain)}
+              hint="FIFO ทุกรายการ"
+            />
+            <StatCard
+              label="ภาษีประมาณ (ปีนี้)"
+              value={fmtThb(taxTotal)}
+              tone="tax"
+              hint={`Win rate ${metrics.winRatePct.toFixed(0)}%`}
+            />
+          </div>
+        </div>
       </div>
 
       {/* ─── FIFO errors ─────────────────────────────────────────── */}

@@ -28,27 +28,41 @@ export function StatCard({
   value,
   hint,
   tone = "default",
+  hintTone,
+  className,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: React.ReactNode;
-  tone?: "default" | "positive" | "negative";
+  tone?: "default" | "positive" | "negative" | "tax";
+  hintTone?: "positive" | "negative";
+  className?: string;
 }) {
   const valueTone =
-    tone === "positive"
-      ? "text-emerald-400"
-      : tone === "negative"
-        ? "text-rose-400"
-        : "text-slate-100";
+    tone === "positive" ? "text-emerald-400"
+    : tone === "negative" ? "text-rose-400"
+    : "text-slate-100";
+
+  const borderAccent =
+    tone === "positive" ? "border-l-4 border-l-emerald-500"
+    : tone === "negative" ? "border-l-4 border-l-rose-500"
+    : tone === "tax" ? "border-l-4 border-l-amber-500"
+    : "border-l-4 border-l-slate-700";
+
+  const hintColor =
+    hintTone === "positive" ? "text-emerald-400"
+    : hintTone === "negative" ? "text-rose-400"
+    : "text-slate-500";
+
   return (
-    <Card>
+    <Card className={cn(borderAccent, className)}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
         {label}
       </p>
       <p className={cn("mt-2 text-2xl font-semibold tabular-nums", valueTone)}>
         {value}
       </p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+      {hint ? <p className={cn("mt-1 text-sm", hintColor)}>{hint}</p> : null}
     </Card>
   );
 }
