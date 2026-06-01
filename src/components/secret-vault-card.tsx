@@ -19,6 +19,8 @@ const PROVIDERS: { id: string; label: string; placeholder: string }[] = [
   { id: "claude", label: "Claude (Anthropic)", placeholder: "sk-ant-..." },
   { id: "gemini", label: "Gemini (Google)", placeholder: "AIza..." },
   { id: "typhoon", label: "Typhoon OCR", placeholder: "sk-..." },
+  { id: "alpaca_key", label: "Alpaca Market Data Key", placeholder: "PK..." },
+  { id: "alpaca_secret", label: "Alpaca Market Data Secret", placeholder: "..." },
 ];
 
 export function SecretVaultCard() {

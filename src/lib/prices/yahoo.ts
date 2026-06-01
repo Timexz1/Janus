@@ -51,10 +51,10 @@ export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<C
     const time = new Date(ts[i] * 1000).toISOString().slice(0, 10);
     byDate.set(time, {
       time,
-      open: open!,
-      high: high!,
-      low: low!,
-      close: close!,
+      open: open as number,
+      high: high as number,
+      low: low as number,
+      close: close as number,
       volume: volume != null && Number.isFinite(volume) ? volume : undefined,
     });
   }
@@ -72,6 +72,14 @@ interface YahooQuoteResult {
   regularMarketTime?: number;
   preMarketTime?: number;
   postMarketTime?: number;
+}
+
+interface YahooChartMeta {
+  chartPreviousClose?: number;
+  currency?: string;
+  regularMarketPrice?: number;
+  regularMarketTime?: number;
+  symbol?: string;
 }
 
 function finiteOrNull(value: number | null | undefined) {
@@ -110,6 +118,30 @@ export function pickYahooQuotePrice(quote: YahooQuoteResult): {
   };
 }
 
+function snapshotFromChartMeta(meta: YahooChartMeta | undefined, requestedTicker: string): QuoteSnapshot | null {
+  const ticker = meta?.symbol?.trim().toUpperCase() ?? requestedTicker;
+  const price = finiteOrNull(meta?.regularMarketPrice);
+  if (!ticker || price == null) return null;
+
+  return {
+    ticker,
+    price,
+    last: price,
+    bid: null,
+    ask: null,
+    bidSize: null,
+    askSize: null,
+    previousClose: finiteOrNull(meta?.chartPreviousClose),
+    currency: meta?.currency ?? null,
+    marketState: null,
+    asOf:
+      typeof meta?.regularMarketTime === "number" && Number.isFinite(meta.regularMarketTime)
+        ? new Date(meta.regularMarketTime * 1000).toISOString()
+        : null,
+    source: "yahoo",
+  };
+}
+
 export async function fetchQuoteSnapshots(tickers: string[]): Promise<QuoteSnapshot[]> {
   const symbols = [
     ...new Set(
@@ -120,35 +152,26 @@ export async function fetchQuoteSnapshots(tickers: string[]): Promise<QuoteSnaps
   ];
   if (symbols.length === 0) return [];
 
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(","))}`;
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: { "User-Agent": "Mozilla/5.0" },
-  });
-  if (!res.ok) throw new Error(`Yahoo quote HTTP ${res.status}`);
+  const snapshots = await Promise.all(
+    symbols.map(async (ticker) => {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=5d&interval=1d&includePrePost=true`;
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      if (!res.ok) throw new Error(`Yahoo quote HTTP ${res.status}`);
 
-  const json = (await res.json()) as {
-    quoteResponse?: {
-      result?: YahooQuoteResult[];
-    };
-  };
+      const json = (await res.json()) as {
+        chart?: {
+          result?: Array<{
+            meta?: YahooChartMeta;
+          }>;
+        };
+      };
 
-  return (json.quoteResponse?.result ?? []).flatMap((quote) => {
-    const ticker = quote.symbol?.trim().toUpperCase();
-    if (!ticker) return [];
+      return snapshotFromChartMeta(json.chart?.result?.[0]?.meta, ticker);
+    }),
+  );
 
-    const { price, asOf } = pickYahooQuotePrice(quote);
-    if (price == null) return [];
-
-    return [
-      {
-        ticker,
-        price,
-        previousClose: finiteOrNull(quote.regularMarketPreviousClose),
-        currency: quote.currency ?? null,
-        marketState: quote.marketState ?? null,
-        asOf,
-      },
-    ];
-  });
+  return snapshots.filter((snapshot): snapshot is QuoteSnapshot => snapshot != null);
 }

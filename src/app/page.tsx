@@ -140,10 +140,15 @@ export default function DashboardPage() {
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1);
+  const quoteSource = Object.values(quotes)
+    .map((quote) => quote.source)
+    .find(Boolean);
   const marketValueHint = hasPrices
     ? latestQuoteTime
-      ? `Yahoo live - ${fmtDateTimeBangkok(latestQuoteTime)}`
-      : "Yahoo live"
+      ? `${quoteSource?.startsWith("alpaca-") ? "Alpaca stream" : "Yahoo live"} - ${fmtDateTimeBangkok(latestQuoteTime)}`
+      : quoteSource?.startsWith("alpaca-")
+        ? "Alpaca stream"
+        : "Yahoo live"
     : "...";
 
   return (
