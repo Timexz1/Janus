@@ -1,4 +1,4 @@
-import type { Candle } from "./types";
+import type { Candle, QuoteSnapshot } from "./types";
 
 /**
  * Yahoo Finance chart provider (brief §7) — free, no API key, JSON daily OHLC.
@@ -13,7 +13,7 @@ export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<C
 
   const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0" },
-    next: { revalidate: 3600 },
+    next: { revalidate: 60 },
   });
   if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
 
@@ -59,4 +59,96 @@ export async function fetchDailyCandles(ticker: string, range = "5y"): Promise<C
     });
   }
   return [...byDate.values()];
+}
+
+interface YahooQuoteResult {
+  symbol?: string;
+  currency?: string;
+  marketState?: string;
+  regularMarketPrice?: number;
+  regularMarketPreviousClose?: number;
+  preMarketPrice?: number;
+  postMarketPrice?: number;
+  regularMarketTime?: number;
+  preMarketTime?: number;
+  postMarketTime?: number;
+}
+
+function finiteOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function pickYahooQuotePrice(quote: YahooQuoteResult): {
+  price: number | null;
+  asOf: string | null;
+} {
+  const state = quote.marketState?.toUpperCase() ?? "";
+  const regularPrice = finiteOrNull(quote.regularMarketPrice);
+  const prePrice = finiteOrNull(quote.preMarketPrice);
+  const postPrice = finiteOrNull(quote.postMarketPrice);
+
+  let price = regularPrice;
+  let timestamp = quote.regularMarketTime;
+
+  if ((state === "PRE" || state === "PREPRE") && prePrice != null) {
+    price = prePrice;
+    timestamp = quote.preMarketTime ?? quote.regularMarketTime;
+  } else if ((state === "POST" || state === "POSTPOST") && postPrice != null) {
+    price = postPrice;
+    timestamp = quote.postMarketTime ?? quote.regularMarketTime;
+  } else if (regularPrice == null) {
+    price = postPrice ?? prePrice ?? null;
+    timestamp = quote.postMarketTime ?? quote.preMarketTime ?? quote.regularMarketTime;
+  }
+
+  return {
+    price,
+    asOf:
+      typeof timestamp === "number" && Number.isFinite(timestamp)
+        ? new Date(timestamp * 1000).toISOString()
+        : null,
+  };
+}
+
+export async function fetchQuoteSnapshots(tickers: string[]): Promise<QuoteSnapshot[]> {
+  const symbols = [
+    ...new Set(
+      tickers
+        .map((ticker) => ticker.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (symbols.length === 0) return [];
+
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(","))}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  if (!res.ok) throw new Error(`Yahoo quote HTTP ${res.status}`);
+
+  const json = (await res.json()) as {
+    quoteResponse?: {
+      result?: YahooQuoteResult[];
+    };
+  };
+
+  return (json.quoteResponse?.result ?? []).flatMap((quote) => {
+    const ticker = quote.symbol?.trim().toUpperCase();
+    if (!ticker) return [];
+
+    const { price, asOf } = pickYahooQuotePrice(quote);
+    if (price == null) return [];
+
+    return [
+      {
+        ticker,
+        price,
+        previousClose: finiteOrNull(quote.regularMarketPreviousClose),
+        currency: quote.currency ?? null,
+        marketState: quote.marketState ?? null,
+        asOf,
+      },
+    ];
+  });
 }

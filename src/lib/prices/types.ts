@@ -7,3 +7,12 @@ export interface Candle {
   close: number;
   volume?: number;
 }
+
+export interface QuoteSnapshot {
+  ticker: string;
+  price: number;
+  previousClose: number | null;
+  currency: string | null;
+  marketState: string | null;
+  asOf: string | null;
+}

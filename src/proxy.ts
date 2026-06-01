@@ -1,19 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-
-const LOCAL_HOST_RE = /^(localhost|127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|\[::1\])(?::\d+)?$/i;
-
-function siteOrigin(req: NextRequest) {
-  const host = req.headers.get("host");
-  if (host && LOCAL_HOST_RE.test(host)) {
-    const protocol = req.nextUrl.protocol.replace(/:$/, "") || "http";
-    return `${protocol}://${host}`;
-  }
-  return process.env.NEXT_PUBLIC_SITE_URL ?? req.nextUrl.origin;
-}
+import { publicSupabaseConfig, siteOriginFromRequest } from "@/lib/app-url";
 
 function redirectTo(req: NextRequest, pathname: string) {
-  return NextResponse.redirect(new URL(pathname, siteOrigin(req)));
+  return NextResponse.redirect(new URL(pathname, siteOriginFromRequest(req)));
 }
 
 /**
@@ -22,12 +12,17 @@ function redirectTo(req: NextRequest, pathname: string) {
  * this middleware is a no-op.
  */
 export async function proxy(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return NextResponse.next();
+  const path = req.nextUrl.pathname;
+  const isAuthPage = path === "/login";
+  const isAuthAction = path.startsWith("/auth/");
+
+  if (isAuthAction) return NextResponse.next();
+
+  const supabaseConfig = publicSupabaseConfig();
+  if (!supabaseConfig) return NextResponse.next();
 
   let res = NextResponse.next({ request: req });
-  const supabase = createServerClient(url, key, {
+  const supabase = createServerClient(supabaseConfig.url, supabaseConfig.anonKey, {
     cookies: {
       getAll: () => req.cookies.getAll(),
       setAll: (toSet) => {
@@ -38,15 +33,14 @@ export async function proxy(req: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const path = req.nextUrl.pathname;
-  const isAuthPage = path === "/login";
-  const isAuthAction = path.startsWith("/auth/");
-
-  if (isAuthAction) return res;
+  let user = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch (error) {
+    console.error("[proxy] Supabase auth check failed", error);
+    return isAuthPage ? res : redirectTo(req, "/login");
+  }
 
   if (!user && !isAuthPage) {
     return redirectTo(req, "/login");

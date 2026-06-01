@@ -6,11 +6,13 @@ import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
 import { buildPortfolio } from "@/lib/portfolio/portfolio";
+import { useLastPrices } from "@/lib/prices/use-prices";
 import { ChartView, type TradeMarker } from "@/components/chart-view";
 import { Card, EmptyState, Select, StatCard } from "@/components/ui";
 import { ZERO } from "@/lib/money/decimal";
 import type { Candle } from "@/lib/prices/types";
 import {
+  fmtDateTimeBangkok,
   fmtPrice,
   fmtQty,
   fmtSignedUsd,
@@ -142,6 +144,7 @@ function ChartsInner() {
   });
 
   const ticker = tickerOverride ?? urlTicker?.toUpperCase() ?? tickers[0] ?? "";
+  const { prices, quotes } = useLastPrices(ticker ? [ticker] : []);
 
   const tickerOptions = useMemo(
     () => Array.from(new Set([...tickers, ticker].filter(Boolean))).sort(),
@@ -276,8 +279,10 @@ function ChartsInner() {
     return hs.reduce((s, h) => s.plus(h.qty), ZERO);
   }, [portfolio.holdings, ticker]);
 
-  const lastClose = candles.length ? candles[candles.length - 1].close : null;
-  const prevClose = candles.length > 1 ? candles[candles.length - 2].close : null;
+  const lastCandleClose = candles.length ? candles[candles.length - 1].close : null;
+  const liveQuote = ticker ? quotes[ticker] : undefined;
+  const lastClose = ticker ? (prices[ticker] ?? lastCandleClose) : lastCandleClose;
+  const prevClose = liveQuote?.previousClose ?? (candles.length > 1 ? candles[candles.length - 2].close : null);
   const changePct =
     lastClose != null && prevClose ? ((lastClose - prevClose) / prevClose) * 100 : null;
   const buys = tradesForTicker.filter((t) => t.side === "buy").length;
@@ -382,8 +387,10 @@ function ChartsInner() {
           value={lastClose != null ? fmtPrice(lastClose) : "—"}
           hint={
             changePct != null
-              ? `${changePct >= 0 ? "▲" : "▼"} ${Math.abs(changePct).toFixed(2)}% วันก่อนหน้า`
-              : "Yahoo EOD"
+              ? `${changePct >= 0 ? "▲" : "▼"} ${Math.abs(changePct).toFixed(2)}% เทียบปิดก่อนหน้า`
+              : liveQuote?.asOf
+                ? `Yahoo live - ${fmtDateTimeBangkok(liveQuote.asOf)}`
+                : "Yahoo"
           }
           tone={changePct == null ? "default" : changePct >= 0 ? "positive" : "negative"}
         />

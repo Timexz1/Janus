@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { publicSupabaseConfig } from "@/lib/app-url";
 
 /**
  * Supabase browser client (brief Phase 1b). The app runs entirely on the local
@@ -8,15 +9,11 @@ import { createBrowserClient } from "@supabase/ssr";
  * only when configured. The service-role key is NEVER referenced here.
  */
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
+  return Boolean(publicSupabaseConfig());
 }
 
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  const config = publicSupabaseConfig();
+  if (!config) throw new Error("Supabase is not configured");
+  return createBrowserClient(config.url, config.anonKey);
 }
