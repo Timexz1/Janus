@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Check, ShieldCheck } from "lucide-react";
+import { Trash2, Check, ShieldCheck } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useStore } from "@/lib/store/hooks";
 import { useT } from "@/lib/i18n/context";
 import {
   saveTaxSettings,
-  addAccount,
-  deleteAccount,
   replaceAllTransactions,
 } from "@/lib/store/local-store";
 import type { OcrProvider } from "@/lib/store/types";
@@ -116,10 +114,8 @@ function ThemeLanguageControls() {
 }
 
 export default function SettingsPage() {
-  const { accounts, taxSettings, hydrated } = useStore();
+  const { taxSettings, hydrated } = useStore();
   const { t } = useT();
-  const [broker, setBroker] = useState("");
-  const [label, setLabel] = useState("");
   const ocrKeyRef = useRef<HTMLInputElement>(null);
 
   if (!hydrated || !taxSettings) return <Card className="h-64 animate-pulse" />;
@@ -230,48 +226,6 @@ export default function SettingsPage() {
         <ThemeLanguageControls />
       </Card>
 
-      <Card className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-200">บัญชีโบรกเกอร์</h2>
-        <ul className="divide-y divide-slate-800">
-          {accounts.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 py-2">
-              <div className="min-w-0">
-                <p className="text-sm text-slate-200">{a.broker}</p>
-                <p className="text-xs text-slate-500">{a.accountLabel} · {a.currency}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => deleteAccount(a.id)}
-                className="ml-auto rounded p-1.5 text-rose-400/80 hover:bg-rose-950/40 hover:text-rose-300"
-                aria-label="ลบบัญชี"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <Field label="โบรกเกอร์" htmlFor="a-broker">
-            <Input id="a-broker" placeholder="เช่น IBKR" value={broker} onChange={(e) => setBroker(e.target.value)} />
-          </Field>
-          <Field label="ชื่อบัญชี" htmlFor="a-label">
-            <Input id="a-label" placeholder="ชื่อเรียก" value={label} onChange={(e) => setLabel(e.target.value)} />
-          </Field>
-          <div className="flex items-end">
-            <Button
-              className="w-full"
-              disabled={!broker.trim()}
-              onClick={() => {
-                addAccount({ broker: broker.trim(), accountLabel: label.trim() || broker.trim(), currency: "USD" });
-                setBroker("");
-                setLabel("");
-              }}
-            >
-              <Plus className="h-4 w-4" aria-hidden /> เพิ่มบัญชี
-            </Button>
-          </div>
-        </div>
-      </Card>
         </div>
 
         <div className="flex h-full min-w-0 flex-col gap-4">

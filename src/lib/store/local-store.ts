@@ -1,5 +1,4 @@
 import type {
-  Account,
   StoredTransaction,
   TransactionInput,
   Remittance,
@@ -25,18 +24,12 @@ import { DEFAULT_CLAUDE_MODEL } from "@/lib/ocr/pricing";
  * Supabase implementation will satisfy later (brief Phase 1b), so UI code never
  * touches the persistence detail directly.
  */
-const ACCOUNTS_KEY = "janus.accounts.v1";
 const TXNS_KEY = "janus.transactions.v1";
 const REMITTANCES_KEY = "janus.remittances.v1";
 const TAX_SETTINGS_KEY = "janus.taxSettings.v1";
 const INCOME_KEY = "janus.income.v1";
 const CHART_STATES_KEY = "janus.chartStates.v1";
 export const STORE_CHANGE_EVENT = "janus:store-change";
-
-export const DEFAULT_ACCOUNTS: Account[] = [
-  { id: "acc_webull", broker: "Webull", accountLabel: "Webull Thailand", currency: "USD" },
-  { id: "acc_dime", broker: "Dime", accountLabel: "Dime! USD", currency: "USD" },
-];
 
 export const DEFAULT_CHART_INDICATORS: ChartIndicators = {
   volume: true,
@@ -49,7 +42,6 @@ export const DEFAULT_CHART_INDICATORS: ChartIndicators = {
 // localStorage stays the synchronous cache; when a user is signed in, mutations
 // are mirrored to Supabase and the cache is hydrated from it on login.
 export type CloudTable =
-  | "accounts"
   | "transactions"
   | "remittances"
   | "income_inputs"
@@ -57,7 +49,6 @@ export type CloudTable =
   | "chart_states";
 
 const KEY_TABLE: Record<string, CloudTable> = {
-  [ACCOUNTS_KEY]: "accounts",
   [TXNS_KEY]: "transactions",
   [REMITTANCES_KEY]: "remittances",
   [INCOME_KEY]: "income_inputs",
@@ -103,7 +94,6 @@ function write<T>(key: string, value: T): void {
 
 /** Overwrite the local cache from a cloud snapshot without mirroring back. */
 export function loadSnapshot(s: {
-  accounts?: Account[];
   transactions?: StoredTransaction[];
   remittances?: Remittance[];
   income?: IncomeByYear;
@@ -112,7 +102,6 @@ export function loadSnapshot(s: {
 }): void {
   if (typeof window === "undefined") return;
   runSuppressed(() => {
-    if (s.accounts) write(ACCOUNTS_KEY, s.accounts);
     if (s.transactions) write(TXNS_KEY, s.transactions);
     if (s.remittances) write(REMITTANCES_KEY, s.remittances);
     if (s.income) write(INCOME_KEY, s.income);
@@ -125,32 +114,10 @@ export function loadSnapshot(s: {
 /** Wipe the local cache (on logout, or before hydrating another user). */
 export function clearLocalData(): void {
   if (typeof window === "undefined") return;
-  [ACCOUNTS_KEY, TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY, CHART_STATES_KEY].forEach((k) =>
+  [TXNS_KEY, REMITTANCES_KEY, INCOME_KEY, TAX_SETTINGS_KEY, CHART_STATES_KEY].forEach((k) =>
     window.localStorage.removeItem(k),
   );
   window.dispatchEvent(new Event(STORE_CHANGE_EVENT));
-}
-
-export function getAccounts(): Account[] {
-  const accts = read<Account[]>(ACCOUNTS_KEY, []);
-  if (accts.length === 0 && !isCloudActive()) {
-    write(ACCOUNTS_KEY, DEFAULT_ACCOUNTS);
-    return DEFAULT_ACCOUNTS;
-  }
-  return accts;
-}
-
-export function addAccount(input: Omit<Account, "id">): Account {
-  const acc: Account = { ...input, id: uid("acc") };
-  write(ACCOUNTS_KEY, [...getAccounts(), acc]);
-  return acc;
-}
-
-export function deleteAccount(id: string): void {
-  write(
-    ACCOUNTS_KEY,
-    getAccounts().filter((a) => a.id !== id),
-  );
 }
 
 export function getTransactions(): StoredTransaction[] {
@@ -187,30 +154,6 @@ export function deleteTransaction(id: string): void {
 
 export function replaceAllTransactions(txns: StoredTransaction[]): void {
   write(TXNS_KEY, txns);
-}
-
-/**
- * Self-heal referential integrity: every transaction must reference an existing
- * account. OCR once mis-read a broker account NUMBER (e.g. "CTH4675306") into
- * accountId, which violated the cloud transactions→accounts foreign key and
- * blocked ALL cloud sync for that user. Remap any such orphan to a valid account
- * (prefer Webull's default). Returns true only if it changed something, so the
- * caller's write/mirror doesn't fire needlessly. No-ops while accounts are empty
- * (mid-hydration) so it never strands data.
- */
-export function repairOrphanTransactions(): boolean {
-  const accounts = getAccounts();
-  if (accounts.length === 0) return false;
-  const validIds = new Set(accounts.map((a) => a.id));
-  const fallbackId = validIds.has("acc_webull") ? "acc_webull" : accounts[0].id;
-  let changed = false;
-  const fixed = getTransactions().map((t) => {
-    if (validIds.has(t.accountId)) return t;
-    changed = true;
-    return { ...t, accountId: fallbackId };
-  });
-  if (changed) write(TXNS_KEY, fixed);
-  return changed;
 }
 
 // --- Remittances -----------------------------------------------------------

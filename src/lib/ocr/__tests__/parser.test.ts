@@ -182,7 +182,7 @@ describe("parseOcrText — Webull profile", () => {
   it("ASTS buy", () => {
     const p = parseOcrText(WEBULL_ASTS_BUY);
     expect(p.broker).toBe("Webull");
-    expect(p.accountId).toBe("acc_webull");
+    expect(p.brokerId).toBe("webull");
     expect(p.side).toBe("buy");
     expect(p.ticker).toBe("ASTS");
     eq(p.qty, "37.04352");
@@ -244,7 +244,7 @@ describe("parseOcrText — Dime profile", () => {
   it("RDW buy (fees = commission + VAT)", () => {
     const p = parseOcrText(DIME_RDW_BUY);
     expect(p.broker).toBe("Dime");
-    expect(p.accountId).toBe("acc_dime");
+    expect(p.brokerId).toBe("dime");
     expect(p.side).toBe("buy");
     expect(p.ticker).toBe("RDW");
     expect(p.exchange).toBe("NYSE");
@@ -319,7 +319,7 @@ describe("parseOcrResponse — structured model output", () => {
       rawText: DIME_RDW_BUY,
       parsed: {
         broker: "Dime",
-        accountId: "acc_dime",
+        brokerId: "dime",
         side: "buy",
         ticker: "RDW",
         exchange: "NYSE",
@@ -343,14 +343,14 @@ describe("parseOcrResponse — structured model output", () => {
     expect(p.executedAt).toMatch(/^2025-10-07/);
   });
 
-  it("never trusts a broker account NUMBER as accountId (FK-safety)", () => {
+  it("never trusts a broker account NUMBER as brokerId", () => {
     // The model sometimes returns the Webull account number ("CTH4675306") in the
-    // accountId field; that would break the transactions→accounts foreign key.
+    // brokerId field; always derive from the broker field instead.
     const p = parseOcrResponse(JSON.stringify({
       rawText: "",
       parsed: {
         broker: "Webull",
-        accountId: "CTH4675306",
+        brokerId: "CTH4675306",
         side: "buy",
         ticker: "ASTS",
         exchange: "NASDAQ",
@@ -359,23 +359,23 @@ describe("parseOcrResponse — structured model output", () => {
         stockValue: "1080.00",
       },
     }));
-    expect(p.accountId).toBe("acc_webull");
+    expect(p.brokerId).toBe("webull");
   });
 
-  it("derives accountId from the broker when the model omits it", () => {
+  it("derives brokerId from the broker when the model omits it", () => {
     const p = parseOcrResponse(JSON.stringify({
       rawText: "",
       parsed: { broker: "Dime", side: "buy", ticker: "RDW", qty: "10", price: "5" },
     }));
-    expect(p.accountId).toBe("acc_dime");
+    expect(p.brokerId).toBe("dime");
   });
 
-  it("keeps a valid acc_* accountId as-is", () => {
+  it("keeps a valid brokerId as-is (webull)", () => {
     const p = parseOcrResponse(JSON.stringify({
       rawText: "",
-      parsed: { broker: "Webull", accountId: "acc_webull", side: "buy", ticker: "ASTS", qty: "1", price: "1" },
+      parsed: { broker: "Webull", brokerId: "webull", side: "buy", ticker: "ASTS", qty: "1", price: "1" },
     }));
-    expect(p.accountId).toBe("acc_webull");
+    expect(p.brokerId).toBe("webull");
   });
 
   it("captures THB funding and derives USD fee deterministically (Dime! Fast)", () => {
@@ -383,7 +383,7 @@ describe("parseOcrResponse — structured model output", () => {
     const p = parseOcrResponse(JSON.stringify({
       rawText: "",
       parsed: {
-        broker: "Dime", accountId: "acc_dime", side: "buy", ticker: "QQQ", exchange: "NASDAQ",
+        broker: "Dime", brokerId: "dime", side: "buy", ticker: "QQQ", exchange: "NASDAQ",
         qty: "0.1127809", price: "523.93", stockValue: null,
         fees: "3.04", fxRate: "33.80", thbTotal: "2000.28",
       },
@@ -400,7 +400,7 @@ describe("parseOcrResponse — structured model output", () => {
   it("leaves fxRate/thbCost null for USD-funded trades", () => {
     const p = parseOcrResponse(JSON.stringify({
       rawText: "",
-      parsed: { broker: "Webull", accountId: "acc_webull", side: "buy", ticker: "ASTS", qty: "1", price: "100", fees: "2" },
+      parsed: { broker: "Webull", brokerId: "webull", side: "buy", ticker: "ASTS", qty: "1", price: "100", fees: "2" },
     }));
     expect(p.fxRate).toBeNull();
     expect(p.thbCost).toBeNull();
@@ -498,7 +498,7 @@ NASDAQ
       rawText: WEBULL_RKLB_BUY_LIMIT_AVG_DIFFERS,
       parsed: {
         broker: "Webull",
-        accountId: "acc_webull",
+        brokerId: "webull",
         side: "buy",
         ticker: "RKLB",
         qty: "10",

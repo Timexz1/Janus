@@ -18,12 +18,12 @@ import { D, ZERO } from "@/lib/money/decimal";
 import { fmtUsd, fmtSignedUsd, fmtThb, fmtQty, fmtPrice, fmtDateTimeBangkok, gainTone } from "@/lib/format";
 
 export default function DashboardPage() {
-  const { accounts, transactions, remittances, taxSettings, incomeByYear, hydrated } = useStore();
+  const { transactions, remittances, taxSettings, incomeByYear, hydrated } = useStore();
   const { t } = useT();
 
   const portfolio = useMemo(
-    () => buildPortfolio(accounts, transactions),
-    [accounts, transactions],
+    () => buildPortfolio(transactions),
+    [transactions],
   );
   const saleEvents = useMemo(() => extractSaleEvents(transactions), [transactions]);
   const heldTickers = useMemo(
@@ -132,7 +132,8 @@ export default function DashboardPage() {
   const recent = [...transactions]
     .sort((a, b) => (a.executedAt < b.executedAt ? 1 : -1))
     .slice(0, 6);
-  const accountLabel = (id: string) => accounts.find((a) => a.id === id)?.broker ?? id;
+  const BROKER_LABELS: Record<string, string> = { webull: "Webull Thailand", dime: "Dime! USD" };
+  const brokerLabel = (id: string) => BROKER_LABELS[id] ?? id;
   const hasPrices = pricedCost.gt(0);
   const latestQuoteTime = Object.values(quotes)
     .map((quote) => quote.asOf)
@@ -171,7 +172,7 @@ export default function DashboardPage() {
           <p className="text-sm font-medium text-rose-300">พบรายการที่คำนวณไม่ได้</p>
           <ul className="mt-2 space-y-1 text-sm text-rose-200/80">
             {portfolio.errors.map((e, i) => (
-              <li key={i}>{accountLabel(e.accountId)} · {e.ticker}: {e.message}</li>
+              <li key={i}>{brokerLabel(e.brokerId)} · {e.ticker}: {e.message}</li>
             ))}
           </ul>
         </Card>
@@ -192,7 +193,7 @@ export default function DashboardPage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-100">
                       <TickerLink ticker={t.ticker} />
-                      <span className="ml-2 text-xs font-normal text-slate-500">{accountLabel(t.accountId)}</span>
+                      <span className="ml-2 text-xs font-normal text-slate-500">{brokerLabel(t.brokerId)}</span>
                     </p>
                     <p className="text-xs text-slate-500">{fmtDateTimeBangkok(t.executedAt)}</p>
                   </div>
@@ -246,11 +247,11 @@ export default function DashboardPage() {
                 const upl = mv ? mv.minus(h.costValue) : null;
                 const uplTone = upl ? gainTone(upl) : "default";
                 return (
-                  <tr key={`${h.accountId}-${h.ticker}`} className="hover:bg-slate-800/30">
+                  <tr key={`${h.brokerId}-${h.ticker}`} className="hover:bg-slate-800/30">
                     <td className="px-4 py-2.5 font-medium text-slate-100">
                       <TickerLink ticker={h.ticker} />
                     </td>
-                    <td className="px-4 py-2.5 text-slate-400">{accountLabel(h.accountId)}</td>
+                    <td className="px-4 py-2.5 text-slate-400">{brokerLabel(h.brokerId)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-slate-200">{fmtQty(h.qty)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-slate-300">{fmtPrice(h.avgCost)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-slate-300">{hasPx ? fmtPrice(px) : "—"}</td>

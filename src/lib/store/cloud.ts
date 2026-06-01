@@ -2,7 +2,6 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  getAccounts,
   getTransactions,
   getRemittances,
   getIncomeByYear,
@@ -12,11 +11,9 @@ import {
   setCloudMirror,
   loadSnapshot,
   clearLocalData,
-  DEFAULT_ACCOUNTS,
   type CloudTable,
 } from "./local-store";
 import type {
-  Account,
   StoredTransaction,
   Remittance,
   IncomeByYear,
@@ -38,21 +35,13 @@ import type {
 // --- mappers (text id = same id local & cloud) ----------------------------
 type Row = Record<string, unknown>;
 
-const accToDb = (a: Account, uid: string): Row => ({
-  id: a.id, user_id: uid, broker: a.broker, account_label: a.accountLabel, currency: a.currency,
-});
-const accFromDb = (r: Row): Account => ({
-  id: r.id as string, broker: r.broker as string,
-  accountLabel: r.account_label as string, currency: r.currency as string,
-});
-
 // `withExtras` adds the newer columns (fx_rate/thb_cost/image_path). It is only
 // turned on when at least one local transaction actually uses them, so a cloud DB
 // that has not run the migration yet still syncs plain USD trades instead of
 // failing the whole batch on an unknown column.
 const txToDb = (t: StoredTransaction, uid: string, withExtras: boolean): Row => {
   const row: Row = {
-    id: t.id, user_id: uid, account_id: t.accountId, ticker: t.ticker, exchange: t.exchange,
+    id: t.id, user_id: uid, broker_id: t.brokerId, ticker: t.ticker, exchange: t.exchange,
     side: t.side, qty: t.qty, price: t.price, stock_value: t.stockValue, fees: t.fees,
     coupons_waived: t.couponsWaived, executed_at: t.executedAt, executed_tz: t.executedTz,
     created_at: t.createdAt,
@@ -65,7 +54,7 @@ const txToDb = (t: StoredTransaction, uid: string, withExtras: boolean): Row => 
   return row;
 };
 const txFromDb = (r: Row): StoredTransaction => ({
-  id: r.id as string, accountId: r.account_id as string, ticker: r.ticker as string,
+  id: r.id as string, brokerId: r.broker_id as string, ticker: r.ticker as string,
   exchange: (r.exchange as StoredTransaction["exchange"]) ?? null,
   side: r.side as StoredTransaction["side"],
   qty: String(r.qty), price: String(r.price),
@@ -145,8 +134,7 @@ const chartStateFromDb = (r: Row): ChartState => ({
 
 // --- hydrate ---------------------------------------------------------------
 async function hydrate(sb: SupabaseClient, uid: string): Promise<void> {
-  const [acc, tx, rem, inc, ts, chart] = await Promise.all([
-    sb.from("accounts").select("*"),
+  const [tx, rem, inc, ts, chart] = await Promise.all([
     sb.from("transactions").select("*"),
     sb.from("remittances").select("*"),
     sb.from("income_inputs").select("*"),
@@ -160,13 +148,7 @@ async function hydrate(sb: SupabaseClient, uid: string): Promise<void> {
     const state = chartStateFromDb(r);
     chartStates[state.ticker] = state;
   }
-  // A user must always have at least the default broker accounts (the signup
-  // trigger seeds them). If the cloud copy comes back empty — e.g. wiped by the
-  // old delMissing bug, or read before the trigger committed — restore the
-  // defaults locally so the transactions FK target always exists.
-  const cloudAccounts = ((acc.data ?? []) as Row[]).map(accFromDb);
   loadSnapshot({
-    accounts: cloudAccounts.length ? cloudAccounts : DEFAULT_ACCOUNTS,
     transactions: ((tx.data ?? []) as Row[]).map(txFromDb),
     remittances: ((rem.data ?? []) as Row[]).map(remFromDb),
     income,
@@ -194,16 +176,7 @@ async function delMissing(sb: SupabaseClient, table: string, uid: string, ids: s
 }
 
 async function mirrorNow(sb: SupabaseClient, uid: string, table: CloudTable) {
-  if (table === "accounts") {
-    const rows = getAccounts().map((a) => accToDb(a, uid));
-    if (rows.length) await run(sb.from("accounts").upsert(rows, { onConflict: "user_id,id" }));
-    await delMissing(sb, "accounts", uid, rows.map((r) => r.id as string));
-  } else if (table === "transactions") {
-    // Ensure FK targets exist on cloud first: a transaction references an account
-    // by (user_id, account_id), and the accounts mirror may not have pushed yet
-    // (or the row was wiped). Upserting accounts here keeps the FK satisfiable.
-    const accs = getAccounts().map((a) => accToDb(a, uid));
-    if (accs.length) await run(sb.from("accounts").upsert(accs, { onConflict: "user_id,id" }));
+  if (table === "transactions") {
     const txns = getTransactions();
     const withExtras = txns.some(
       (t) => t.fxRate != null || t.thbCost != null || t.imagePath != null,

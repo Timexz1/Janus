@@ -1,18 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { Decimal } from "@/lib/money/decimal";
 import { buildPortfolio, extractSaleEvents } from "@/lib/portfolio/portfolio";
-import type { Account, StoredTransaction } from "@/lib/store/types";
+import type { StoredTransaction } from "@/lib/store/types";
 
 const close = (a: Decimal, expected: number, tol = 0.01) =>
   expect(Math.abs(Number(a.toString()) - expected)).toBeLessThanOrEqual(tol);
 
-const accounts: Account[] = [
-  { id: "acc_webull", broker: "Webull", accountLabel: "Webull", currency: "USD" },
-];
-
 function tx(p: Partial<StoredTransaction> & Pick<StoredTransaction, "id" | "side" | "qty" | "price">): StoredTransaction {
   return {
-    accountId: "acc_webull",
+    brokerId: "webull",
     ticker: "ASTS",
     exchange: "NASDAQ",
     stockValue: null,
@@ -47,7 +43,7 @@ const ASTS_SELL = tx({
 
 describe("buildPortfolio", () => {
   it("derives holding, avg cost and realized gain (FIFO §3.5)", () => {
-    const p = buildPortfolio(accounts, [ASTS_BUY, ASTS_SELL]);
+    const p = buildPortfolio([ASTS_BUY, ASTS_SELL]);
     expect(p.holdings).toHaveLength(1);
     close(p.holdings[0].qty, 18.04352, 1e-7);
     close(p.holdings[0].avgCost, 73.4787, 0.001);
@@ -57,7 +53,7 @@ describe("buildPortfolio", () => {
   });
 
   it("reports a sell with no matching buy as a group error (no crash)", () => {
-    const p = buildPortfolio(accounts, [ASTS_SELL]);
+    const p = buildPortfolio([ASTS_SELL]);
     expect(p.errors).toHaveLength(1);
     expect(p.holdings).toHaveLength(0);
   });

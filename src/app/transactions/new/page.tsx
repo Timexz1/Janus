@@ -10,7 +10,7 @@ import { Card } from "@/components/ui";
 function NewTransactionInner() {
   const params = useSearchParams();
   const editId = params.get("id");
-  const { accounts, transactions, hydrated } = useStore();
+  const { transactions, hydrated } = useStore();
   const editTx = editId
     ? transactions.find((t) => t.id === editId)
     : undefined;
@@ -29,9 +29,9 @@ function NewTransactionInner() {
       </header>
       {hydrated ? (
         editId ? (
-          <TransactionForm accounts={accounts} editTx={editTx} />
+          <TransactionForm editTx={editTx} />
         ) : (
-          <ImportTable accounts={accounts} />
+          <ImportTable />
         )
       ) : (
         <Card className="h-40 animate-pulse" />
