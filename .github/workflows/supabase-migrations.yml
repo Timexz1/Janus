@@ -39,7 +39,9 @@ jobs:
         run: supabase link --project-ref "$PROJECT_REF"
 
       - name: Apply migrations
-        run: supabase db push
+        # --include-all applies pending migrations even if a new file sorts before
+        # an already-applied one (can happen with parallel development).
+        run: supabase db push --include-all
 
       - name: Show applied migrations
         if: always()
