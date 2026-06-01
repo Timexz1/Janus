@@ -11,6 +11,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, createClient } from "./client";
 import { startCloudSync, stopCloudSync } from "@/lib/store/cloud";
+import { resetVault } from "@/lib/store/secret-vault";
 
 interface AuthCtx {
   user: User | null;
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (clearOnEmpty) {
         startedFor.current = null;
         stopCloudSync();
+        resetVault();
         setUser(null);
         setLoading(false);
       } else {
@@ -149,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       startedFor.current = null;
       stopCloudSync();
+      resetVault();
       setUser(null);
       setLoading(false);
       router.replace("/login");

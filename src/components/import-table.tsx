@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Upload, ScanText, Plus, Trash2, Loader2, ImageIcon, X, PencilLine } from "lucide-react";
@@ -10,6 +10,7 @@ import { buildPortfolio } from "@/lib/portfolio/portfolio";
 import { addTransaction, getTransactions, getTaxSettings, saveTaxSettings } from "@/lib/store/local-store";
 import { isSupabaseConfigured, createClient } from "@/lib/supabase/client";
 import { uploadScreenshot } from "@/lib/store/screenshots";
+import { getSecret, subscribeVault } from "@/lib/store/secret-vault";
 import { useStore } from "@/lib/store/hooks";
 import { CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL } from "@/lib/ocr/pricing";
 import type { Account, OcrProvider, StoredTransaction } from "@/lib/store/types";
@@ -281,12 +282,15 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
       : ocrProvider === "gemini"
         ? "Gemini · gemini-2.5-flash"
         : "Typhoon OCR";
-  const ocrReady =
+  const [, forceVault] = useState(0);
+  useEffect(() => subscribeVault(() => forceVault((n) => n + 1)), []);
+  const localKey =
     ocrProvider === "claude"
-      ? Boolean(taxSettings?.claudeApiKey)
+      ? taxSettings?.claudeApiKey
       : ocrProvider === "gemini"
-        ? Boolean(taxSettings?.geminiApiKey)
-        : Boolean(taxSettings?.typhoonApiKey);
+        ? taxSettings?.geminiApiKey
+        : taxSettings?.typhoonApiKey;
+  const ocrReady = Boolean(getSecret(ocrProvider) || localKey);
 
   function patchRow(id: string, patch: Partial<ImportRow>) {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -343,15 +347,18 @@ export function ImportTable({ accounts }: { accounts: Account[] }) {
     patchRow(row.id, { status: "processing", message: undefined, errors: [] });
     try {
       const settings = getTaxSettings();
+      // Prefer the E2EE vault key (decrypted in-memory after unlock); fall back to
+      // the device-local key. The plaintext is sent to our own /api/ocr only for
+      // this request — never stored server-side.
       const res = await fetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dataUrl: row.dataUrl,
           provider: settings.ocrProvider,
-          geminiApiKey: settings.geminiApiKey || undefined,
-          typhoonApiKey: settings.typhoonApiKey || undefined,
-          claudeApiKey: settings.claudeApiKey || undefined,
+          geminiApiKey: getSecret("gemini") || settings.geminiApiKey || undefined,
+          typhoonApiKey: getSecret("typhoon") || settings.typhoonApiKey || undefined,
+          claudeApiKey: getSecret("claude") || settings.claudeApiKey || undefined,
           claudeModel: settings.claudeModel,
         }),
       });

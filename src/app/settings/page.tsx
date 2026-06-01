@@ -16,6 +16,7 @@ import { APPORTIONMENT_LABELS, type ApportionmentMethod } from "@/lib/tax/config
 import { CLAUDE_MODELS } from "@/lib/ocr/pricing";
 import { Decimal } from "@/lib/money/decimal";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
+import { SecretVaultCard } from "@/components/secret-vault-card";
 
 function Toggle({
   checked,
@@ -378,6 +379,8 @@ export default function SettingsPage() {
           </span>
         </p>
       </Card>
+
+      <SecretVaultCard />
 
       <Card className="flex flex-1 flex-col space-y-2 border-rose-900/40">
         <h2 className="text-sm font-semibold text-rose-300">ลบข้อมูล</h2>
