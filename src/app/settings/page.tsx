@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/context";
 import {
   saveTaxSettings,
   replaceAllTransactions,
+  deleteTransactionsByBroker,
 } from "@/lib/store/local-store";
 import type { OcrProvider } from "@/lib/store/types";
 import { APPORTIONMENT_LABELS, type ApportionmentMethod } from "@/lib/tax/config";
@@ -336,17 +337,43 @@ export default function SettingsPage() {
 
       <SecretVaultCard />
 
-      <Card className="flex flex-1 flex-col space-y-2 border-rose-900/40">
+      <Card className="flex flex-1 flex-col space-y-3 border-rose-900/40">
         <h2 className="text-sm font-semibold text-rose-300">ลบข้อมูล</h2>
-        <p className="text-xs text-slate-500">ล้างรายการเทรดทั้งหมด (ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น)</p>
-        <Button
-          variant="danger"
-          onClick={() => {
-            if (window.confirm("ลบรายการเทรดทั้งหมด? ย้อนกลับไม่ได้")) replaceAllTransactions([]);
-          }}
-        >
-          <Check className="h-4 w-4" aria-hidden /> ล้างรายการเทรด
-        </Button>
+        <p className="text-xs text-slate-500">ย้อนกลับไม่ได้ — ข้อมูลเก็บในเบราว์เซอร์นี้เท่านั้น</p>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-400">ลบแยกตามพอร์ต</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm("ลบรายการเทรดทั้งหมดของ Webull? ย้อนกลับไม่ได้"))
+                  deleteTransactionsByBroker("webull");
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden /> ล้าง Webull
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm("ลบรายการเทรดทั้งหมดของ Dime? ย้อนกลับไม่ได้"))
+                  deleteTransactionsByBroker("dime");
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden /> ล้าง Dime
+            </Button>
+          </div>
+        </div>
+        <div className="border-t border-slate-800 pt-3">
+          <p className="mb-2 text-xs font-medium text-slate-400">ลบทั้งหมด</p>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (window.confirm("ลบรายการเทรดทั้งหมด? ย้อนกลับไม่ได้")) replaceAllTransactions([]);
+            }}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden /> ล้างรายการเทรดทั้งหมด
+          </Button>
+        </div>
       </Card>
         </div>
       </div>

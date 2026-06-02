@@ -175,6 +175,10 @@ export function replaceAllTransactions(txns: StoredTransaction[]): void {
   write(TXNS_KEY, txns);
 }
 
+export function deleteTransactionsByBroker(brokerId: string): void {
+  write(TXNS_KEY, getTransactions().filter((t) => t.brokerId !== brokerId));
+}
+
 // --- Remittances -----------------------------------------------------------
 
 export function getRemittances(): Remittance[] {
